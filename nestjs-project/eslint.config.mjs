@@ -32,4 +32,14 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    // Assertions like `expect(repo.save).toHaveBeenCalled()` hand the method to
+    // expect() without ever invoking it, so the unbound-`this` hazard this rule
+    // guards against cannot occur. typescript-eslint documents it as a known
+    // false positive for Jest and points to relaxing it in test files.
+    files: ['**/*.spec.ts', '**/*.integration-spec.ts', '**/*.e2e-spec.ts'],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
 );
