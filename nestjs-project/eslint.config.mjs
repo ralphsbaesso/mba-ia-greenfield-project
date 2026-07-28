@@ -1,5 +1,6 @@
 // @ts-check
 import eslint from '@eslint/js';
+import pluginJest from 'eslint-plugin-jest';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
@@ -33,13 +34,16 @@ export default tseslint.config(
     },
   },
   {
-    // Assertions like `expect(repo.save).toHaveBeenCalled()` hand the method to
-    // expect() without ever invoking it, so the unbound-`this` hazard this rule
-    // guards against cannot occur. typescript-eslint documents it as a known
-    // false positive for Jest and points to relaxing it in test files.
+    // `expect(repo.save).toHaveBeenCalled()` hands the method to expect() without
+    // ever invoking it, so the base rule's unbound-`this` hazard cannot occur there.
+    // jest/unbound-method extends the base rule and whitelists only that pattern —
+    // a genuine unbound call in a spec still errors. The plugin requires the base
+    // rule to be off wherever its variant is on.
     files: ['**/*.spec.ts', '**/*.integration-spec.ts', '**/*.e2e-spec.ts'],
+    plugins: { jest: pluginJest },
     rules: {
       '@typescript-eslint/unbound-method': 'off',
+      'jest/unbound-method': 'error',
     },
   },
 );
