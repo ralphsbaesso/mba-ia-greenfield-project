@@ -37,6 +37,13 @@ describe('Database migrations (integration)', () => {
       ),
       dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
     ]);
+
+    // DROP TABLE leaves enum types behind and Postgres has no CREATE TYPE IF NOT
+    // EXISTS, so re-running the migrations against an already-migrated database
+    // fails unless the type is dropped too. Must come after the tables that use it.
+    await dataSource.query(
+      `DROP TYPE IF EXISTS "public"."verification_tokens_type_enum"`,
+    );
   });
 
   afterAll(async () => {
