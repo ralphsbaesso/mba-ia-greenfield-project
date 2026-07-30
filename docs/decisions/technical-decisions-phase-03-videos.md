@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-07-28
 scope_description: "Backend foundation for video upload and processing: S3-compatible object storage usage, background job queue, 10GB direct-to-storage upload handshake, separate FFmpeg worker, unique video URL, streaming/download delivery, and the video status lifecycle with failure handling."
 ---
@@ -46,7 +46,7 @@ Sign requests manually with `crypto` and talk to the S3 REST API directly.
 
 **Libraries:** `@aws-sdk/client-s3` `^3`, `@aws-sdk/s3-request-presigner` `^3`
 
-**Decision:** _[pending]_
+**Decision:** A (@aws-sdk/client-s3 v3 + s3-request-presigner)
 
 ---
 
@@ -77,7 +77,7 @@ Swap the container for another S3 implementation, keeping the AWS SDK.
 
 **Recommendation:** **Option A (pinned `minio/minio:RELEASE.2025-09-07T16-13-09Z`)** — MinIO is a given, and pinning is the only way to keep `docker compose down -v && up -d` reproducible now that upstream community publishing has stopped. The frozen-image and reduced-console consequences are acceptable for a local dev/eval environment and should be recorded in `nestjs-project/CLAUDE.md` rather than worked around. Verification in the smoke test should go through the S3 API (`mc` / SDK / integration tests), not the console.
 
-**Decision:** _[pending]_
+**Decision:** A (pinned minio/minio:RELEASE.2025-09-07T16-13-09Z)
 
 ---
 
@@ -109,7 +109,7 @@ Same as A, but keys embed the owning channel.
 
 **Recommendation:** **Option A (single private bucket, prefix per kind)** — the phase needs private-by-default storage with presigned or proxied access; nothing in Fase 03 requires public thumbnails, and Option B would pre-empt Fase 04's visibility rules (público/unlisted) by making thumbnails publicly addressable. Deriving both keys from `videoId` keeps the worker and delivery paths free of extra lookups. **Persist the resolved keys in the `videos` row anyway** (`storage_key`, `thumbnail_key`) rather than recomputing from a convention — the row must stay readable if the convention ever changes. Object extension comes from the initiate request's declared content type, not from the client-supplied filename.
 
-**Decision:** _[pending]_
+**Decision:** A (single private bucket, prefix per kind)
 
 ---
 
@@ -142,7 +142,7 @@ A `rabbitmq:*-management` container; the worker is an AMQP consumer.
 
 **Libraries:** `bullmq` `^5`, `@nestjs/bullmq` `^11`; Compose service `redis` (official image, Redis ≥ 6.2, configured `--maxmemory-policy noeviction`)
 
-**Decision:** _[pending]_
+**Decision:** A (BullMQ + Redis via @nestjs/bullmq)
 
 ---
 
@@ -180,7 +180,7 @@ Run a tus endpoint with an S3 store; the client uses a tus uploader for resumabl
 
 **On the completion trigger:** prefer the **client-called `complete` endpoint** over a MinIO bucket notification (`s3:ObjectCreated:CompleteMultipartUpload` → webhook). MinIO supports the notification, but `CompleteMultipartUpload` is a server-side call that the API must make anyway (it needs the ETag list), so the API already knows the exact moment the object exists — a webhook would add a second, differently-authenticated ingress path and a dev-only MinIO configuration step for information the API already has. The API remains the single place that publishes the job.
 
-**Decision:** _[pending]_
+**Decision:** A (presigned multipart, API-orchestrated, draft at initiate)
 
 ---
 
@@ -213,7 +213,7 @@ A standalone script instantiating a BullMQ `Worker` and a raw `pg` client or a b
 
 **On database access:** the worker writes **directly via TypeORM** using the shared `Video` entity — not through an internal HTTP API. An internal API would add a network hop, a second auth surface, and a hard dependency of the worker on API availability, for no gain: both containers already legitimately reach `db`, and the diagram states `worker → db "Updates"` explicitly.
 
-**Decision:** _[pending]_
+**Decision:** A (same codebase, separate entrypoint, standalone app context)
 
 ---
 
@@ -246,7 +246,7 @@ The historically standard fluent wrapper (`ffmpeg().screenshots(...)`, `ffmpeg.f
 
 **Libraries:** none (Node built-in `child_process`); system package `ffmpeg` in the worker image
 
-**Decision:** _[pending]_
+**Decision:** A (direct execFile; ffmpeg via apt in worker image)
 
 ---
 
@@ -278,7 +278,7 @@ Fetch the first N MB, probe it, and use the metadata to fetch only the byte rang
 
 **Recommendation:** **Option A (download to a temp file)** — it is the only option whose correctness does not depend on container-format layout or on FFmpeg's remote-seek behavior, and correctness is what this phase is graded on. Bound the cost instead of avoiding it: keep worker **concurrency low** (start at 1) so peak scratch usage is one file, mount a dedicated temp volume for the worker, and always clean up in a `finally`. Option B is the right optimization later — it should be revisited if processing latency becomes a concern, and its viability is a measurable question (does `ffprobe` over presigned HTTP read the header only for our inputs?) rather than a design one.
 
-**Decision:** _[pending]_
+**Decision:** A (download to temp file, low concurrency)
 
 ---
 
@@ -309,7 +309,7 @@ Let FFmpeg pick the most representative frame from a window, or generate several
 
 **Recommendation:** **Option B (percentage of duration, clamped)** — duration is already extracted in the same job, so seeking to ~10% costs nothing extra and avoids the single most common failure of Option A (a black opening frame) without Option C's decode cost or non-determinism. Concretely: seek to `max(1s, duration * 0.10)`, extract exactly one frame (`-frames:v 1`), output **JPEG** (universally supported by browsers and far smaller than PNG for photographic frames), scale to a fixed width with `-vf scale=<W>:-2` so the aspect ratio is preserved and the height stays even. Store under the key from TD-03 and record `thumbnail_key` on the row. Fase 04 owns custom thumbnails; this phase produces exactly one automatic default.
 
-**Decision:** _[pending]_
+**Decision:** B (percentage of duration, clamped; single JPEG)
 
 ---
 
@@ -342,7 +342,7 @@ A dedicated column holding a short, URL-safe random string (e.g. 11–12 charact
 
 **Libraries:** none (Node built-in `crypto`)
 
-**Decision:** _[pending]_
+**Decision:** B (short random public_id, unique index, built-in crypto)
 
 ---
 
@@ -373,7 +373,7 @@ A dedicated column holding a short, URL-safe random string (e.g. 11–12 charact
 
 **Recommendation:** **Option B (`302` to a short-lived presigned URL)** for both streaming and download — it matches the architecture diagram's explicit `frontend → storage "Streams"` edge, it keeps the API out of the data path (consistent with the phase's whole thesis on the upload side), and it gets correct `Range`/`206` semantics from the storage server for free instead of hand-rolling partial-content handling. Keep a stable, authorized API route as the entry point (`/videos/{publicId}/stream` and `/videos/{publicId}/download`) rather than exposing raw URLs, so authorization stays server-side and Fase 04/05 can tighten it without changing the client contract; set the presigned TTL to minutes, not hours; and use `response-content-disposition` on the download URL so the same object serves both behaviors. The main thing given up versus Option A is per-range authorization — acceptable in this phase, where video viewing is anonymous by design (`docs/project-plan.md`, Fase 05: "Acesso anônimo à visualização de vídeos"), and revisitable in Fase 04 when unlisted/private visibility arrives.
 
-**Decision:** _[pending]_
+**Decision:** B (302 to short-lived presigned URL)
 
 ---
 
@@ -404,7 +404,7 @@ Separate the publication lifecycle from the processing lifecycle.
 
 **Recommendation:** **Option A (minimal `draft → processing → ready | error`)** — it maps one-to-one onto the acceptance criterion and every state corresponds to an event the API actually observes. Option B's `uploading` is unmaintainable precisely because TD-05 keeps the API out of the transfer, and Option C's second axis belongs to Fase 04's visibility work. Concretely: a Postgres **enum** column defaulting to `draft`; transitions are `initiate → draft`, `complete → processing` (in the same operation that publishes the job), `worker success → ready`, `worker permanent failure → error` (with the reason persisted, per TD-13). Transitions are guarded — the complete endpoint only accepts a video in `draft`, and the worker only advances a video in `processing` — which is also what makes the job idempotent (TD-14).
 
-**Decision:** _[pending]_
+**Decision:** A (minimal draft → processing → ready | error)
 
 ---
 
@@ -435,7 +435,7 @@ Distinguish a non-decodable input (ffprobe exits non-zero with a parse error) fr
 
 **Recommendation:** **Option A as the baseline, with Option C's fail-fast applied to the one clearly-classifiable case** — retries with exponential backoff (start at `attempts: 3`, `backoff: exponential, delay: 5000`) handle the transient class; on exhaustion the worker writes `status = error` **plus a persisted failure reason** and publishes to a consumer-less `video-processing-dlq` so nothing is lost silently. Layer on top: when `ffprobe` reports the input has no decodable video stream, treat it as permanent and go straight to `error` without consuming the remaining attempts — that is the exact case the smoke test exercises ("subir um arquivo não-vídeo e confirmar status `error` sem derrubar o worker"), and it is cheap to classify because it is ffprobe's own verdict rather than a guess about infrastructure. The worker must never let a processing failure crash the process: the handler catches, records, and returns. **Reprocessing** is exposed as an explicit re-enqueue path guarded to videos in `error` (not an automatic retry loop) so a fixed environment can recover a video without a new upload.
 
-**Decision:** _[pending]_
+**Decision:** A + fail-fast on non-decodable input
 
 ---
 
@@ -466,7 +466,7 @@ Persist a `processing_token` on the row; the job payload carries it, and the wor
 
 **Recommendation:** **Option A (deterministic `jobId` + atomic status guard)** — the queue-level dedup is one line and eliminates the common duplicate (a client calling complete twice), while the status guard is the real safety net and is already implied by TD-12's guarded transitions. Make the guard an **atomic conditional update** rather than a read-then-write so two workers cannot both proceed, and keep the storage keys derived from `videoId` (TD-03) so any re-run is idempotent in storage too — the thumbnail is overwritten, not duplicated. Option C's token is the right answer only if concurrent reprocessing of the same video becomes possible; it is not in this phase, where reprocessing is guarded to videos in `error`.
 
-**Decision:** _[pending]_
+**Decision:** A (deterministic jobId + atomic status guard)
 
 ---
 
@@ -497,7 +497,7 @@ Drafts stay as-is; Fase 04's management panel surfaces them and the user deletes
 
 **Recommendation:** **Option A, scoped down: persist `uploadId` and implement an explicit `abortUpload` path plus a cleanup service method; wire the schedule conservatively** — the part-accumulation problem in Option C is real and is called out in the project plan, and Option B leaves the database side unaddressed. The minimum honest implementation is (1) store the `uploadId` on the draft row so the multipart upload can always be aborted, (2) expose an explicit cancel operation for the owner, and (3) provide a cleanup routine that aborts and removes drafts older than a generous threshold (24h comfortably exceeds any realistic 10GB transfer). Keep the *row deletion* policy conservative — if the plan prefers, the routine can abort the multipart upload (reclaiming the storage, which is the costly part) and leave the row for Fase 04's panel to handle; that split is the safer reading of scope, since Fase 04 owns draft management and this phase owns storage hygiene.
 
-**Decision:** _[pending]_
+**Decision:** A, scoped (persist uploadId, abort path, conservative cleanup)
 
 ---
 
@@ -505,21 +505,21 @@ Drafts stay as-is; Fase 04's management panel surfaces them and the user deletes
 
 | ID | Scope | Decision | Recommendation | Choice |
 |----|-------|----------|---------------|--------|
-| TD-01 | Backend | Object Storage Client SDK | A (`@aws-sdk/client-s3` v3 + `s3-request-presigner`) | _[pending]_ |
-| TD-02 | Repo-wide | Local S3 Service in Docker Compose | A (pinned `minio/minio:RELEASE.2025-09-07T16-13-09Z`) | _[pending]_ |
-| TD-03 | Backend | Bucket and Object Key Layout | A (single private bucket, prefix per kind) | _[pending]_ |
-| TD-04 | Backend | Queue Technology | A (BullMQ + Redis via `@nestjs/bullmq`) | _[pending]_ |
-| TD-05 | Cross-layer | 10GB Upload Strategy and Draft Pre-registration | A (presigned multipart, API-orchestrated, draft at initiate) | _[pending]_ |
-| TD-06 | Backend | Worker Runtime Shape and Database Access | A (same codebase, separate entrypoint, standalone app context) | _[pending]_ |
-| TD-07 | Backend | FFmpeg/ffprobe Invocation and Binary Provisioning | A (direct `execFile`; `ffmpeg` via apt in worker image) | _[pending]_ |
-| TD-08 | Backend | How the Worker Reads the Source File | A (download to temp file, low concurrency) | _[pending]_ |
-| TD-09 | Backend | Thumbnail Extraction Policy | B (percentage of duration, clamped; single JPEG) | _[pending]_ |
-| TD-10 | Backend | Unique Video URL Identifier | B (short random `public_id`, unique index, built-in `crypto`) | _[pending]_ |
-| TD-11 | Cross-layer | Streaming and Download Delivery Strategy | B (`302` to short-lived presigned URL) | _[pending]_ |
-| TD-12 | Backend | Video Status Lifecycle and Transitions | A (minimal `draft → processing → ready \| error`) | _[pending]_ |
-| TD-13 | Backend | Processing Failure Handling | A + fail-fast on non-decodable input | _[pending]_ |
-| TD-14 | Backend | Worker Job Idempotency | A (deterministic `jobId` + atomic status guard) | _[pending]_ |
-| TD-15 | Backend | Abandoned Upload (Orphan Draft) Handling | A, scoped (persist `uploadId`, abort path, conservative cleanup) | _[pending]_ |
+| TD-01 | Backend | Object Storage Client SDK | A (`@aws-sdk/client-s3` v3 + `s3-request-presigner`) | A (@aws-sdk/client-s3 v3 + s3-request-presigner) |
+| TD-02 | Repo-wide | Local S3 Service in Docker Compose | A (pinned `minio/minio:RELEASE.2025-09-07T16-13-09Z`) | A (pinned minio/minio:RELEASE.2025-09-07T16-13-09Z) |
+| TD-03 | Backend | Bucket and Object Key Layout | A (single private bucket, prefix per kind) | A (single private bucket, prefix per kind) |
+| TD-04 | Backend | Queue Technology | A (BullMQ + Redis via `@nestjs/bullmq`) | A (BullMQ + Redis via @nestjs/bullmq) |
+| TD-05 | Cross-layer | 10GB Upload Strategy and Draft Pre-registration | A (presigned multipart, API-orchestrated, draft at initiate) | A (presigned multipart, API-orchestrated, draft at initiate) |
+| TD-06 | Backend | Worker Runtime Shape and Database Access | A (same codebase, separate entrypoint, standalone app context) | A (same codebase, separate entrypoint, standalone app context) |
+| TD-07 | Backend | FFmpeg/ffprobe Invocation and Binary Provisioning | A (direct `execFile`; `ffmpeg` via apt in worker image) | A (direct execFile; ffmpeg via apt in worker image) |
+| TD-08 | Backend | How the Worker Reads the Source File | A (download to temp file, low concurrency) | A (download to temp file, low concurrency) |
+| TD-09 | Backend | Thumbnail Extraction Policy | B (percentage of duration, clamped; single JPEG) | B (percentage of duration, clamped; single JPEG) |
+| TD-10 | Backend | Unique Video URL Identifier | B (short random `public_id`, unique index, built-in `crypto`) | B (short random public_id, unique index, built-in crypto) |
+| TD-11 | Cross-layer | Streaming and Download Delivery Strategy | B (`302` to short-lived presigned URL) | B (302 to short-lived presigned URL) |
+| TD-12 | Backend | Video Status Lifecycle and Transitions | A (minimal `draft → processing → ready \| error`) | A (minimal draft → processing → ready \| error) |
+| TD-13 | Backend | Processing Failure Handling | A + fail-fast on non-decodable input | A + fail-fast on non-decodable input |
+| TD-14 | Backend | Worker Job Idempotency | A (deterministic `jobId` + atomic status guard) | A (deterministic jobId + atomic status guard) |
+| TD-15 | Backend | Abandoned Upload (Orphan Draft) Handling | A, scoped (persist `uploadId`, abort path, conservative cleanup) | A, scoped (persist uploadId, abort path, conservative cleanup) |
 
 ---
 

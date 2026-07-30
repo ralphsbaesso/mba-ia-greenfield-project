@@ -1,7 +1,7 @@
 ---
 scope_type: ad-hoc
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-07-29
 scope_description: "Authorization and ownership model for the Fase 03 video endpoints (anonymous vs. authenticated routes, owning entity of the pre-registered draft, access rule for non-ready videos) plus the ffprobe metadata field set persisted by the worker."
 ---
@@ -59,7 +59,7 @@ Reads are reachable without a token, but when a token *is* present the guard res
 
 The **initiate** call is the security boundary of the whole upload path: it is what mints presigned part URLs, and those URLs are bearer capabilities for their TTL. Authenticating initiate is therefore what scopes the grant — the part PUTs themselves are unauthenticated by construction (they go straight to storage, per `TD-05`), and no guard can change that. Rate limiting on initiate is inherited from the global `ThrottlerGuard`; whether the video routes need a tighter bucket than the app default is an implementation concern for `/implement`, not a TD.
 
-**Decision:** _[pending]_
+**Decision:** A (anonymous reads keyed by publicId, authenticated writes + owner route keyed by videoId)
 
 ---
 
@@ -92,7 +92,7 @@ Denormalize so either question is answerable without a join.
 
 **Sub-variant considered and not taken:** adding `channelId` to the JWT payload to skip the lookup entirely. Rejected because it mutates an inherited contract (`phase-02-auth`'s token shape) for a saving of one indexed query on a once-per-upload call, and it puts a value in a token that outlives changes to it — Fase 04 lets users edit channel fields, and while the id itself is stable, widening the token to carry denormalized channel state invites exactly that drift. If a later phase finds the lookup genuinely hot, the change is a phase-02 supersede, not a Fase 03 shortcut.
 
-**Decision:** _[pending]_
+**Decision:** A (channel_id FK, resolved from sub at initiate)
 
 ---
 
@@ -123,7 +123,7 @@ Delivery ignores status and presigns the object if the key is populated.
 
 **Recommendation:** **Option A** — it is the only option that both keeps unreadable content unreachable and gives Fase 03 an observable `processing → ready` transition to assert. The load-bearing detail is **`404`, not `403`**: a `403` confirms the video exists, which is the leak Fase 04's `unlisted` rule must not have, and starting with `404` means that rule arrives as a tightening rather than a correction. Concretely: the public metadata and both delivery handlers filter on `status = 'ready'` in the same query that resolves `publicId` (one query, not a fetch-then-check, so there is no window where the check and the read disagree); the owner route returns the row in any state including `error` with its persisted failure reason (`TD-13`), which is what makes a failed upload diagnosable by its owner rather than silently absent.
 
-**Decision:** _[pending]_
+**Decision:** A (ready-only on public routes with 404; owner reads any state)
 
 ---
 
@@ -156,20 +156,32 @@ Option B, plus a `jsonb` column holding the full probe output for forensics.
 
 | Column | Type | ffprobe source | Null? |
 |---|---|---|---|
-| `duration_seconds` | `numeric(10,3)` | `format.duration` | no |
-| `width` | `integer` | first video stream `.width` | no |
-| `height` | `integer` | first video stream `.height` | no |
-| `video_codec` | `varchar(32)` | first video stream `.codec_name` | no |
+| `duration_seconds` | `numeric(10,3)` | `format.duration` | yes, until `ready` |
+| `width` | `integer` | first video stream `.width` | yes, until `ready` |
+| `height` | `integer` | first video stream `.height` | yes, until `ready` |
+| `video_codec` | `varchar(32)` | first video stream `.codec_name` | yes, until `ready` |
 | `audio_codec` | `varchar(32)` | first audio stream `.codec_name` | **yes** — a file may have no audio track |
-| `container_format` | `varchar(64)` | `format.format_name` | no |
+| `container_format` | `varchar(64)` | `format.format_name` | yes, until `ready` |
 | `bitrate_bps` | `bigint` | `format.bit_rate` | yes — absent for some containers |
-| `size_bytes` | `bigint` | storage object size (see below) | no |
+| `size_bytes` | `bigint` | storage object size (see below) | yes, until `ready` |
 
-Three details the field list depends on. **`duration_seconds` is fractional** — ffprobe reports seconds with decimals, so an integer column silently truncates; `numeric(10,3)` keeps millisecond precision without float drift. **`size_bytes` comes from the storage object, not from `format.size`** — the object is what is billed and what `Content-Length` must agree with, so `HeadObject` is authoritative and ffprobe's value serves only as a cross-check. **A file with no video stream is not a video** — `width`/`height`/`video_codec` being non-nullable is the schema stating that, and such an input must fail as non-decodable per `TD-13` rather than land a row with null geometry.
+Three details the field list depends on. **`duration_seconds` is fractional** — ffprobe reports seconds with decimals, so an integer column silently truncates; `numeric(10,3)` keeps millisecond precision without float drift. **`size_bytes` comes from the storage object, not from `format.size`** — the object is what is billed and what `Content-Length` must agree with, so `HeadObject` is authoritative and ffprobe's value serves only as a cross-check. **A file with no video stream is not a video** — `width`/`height`/`video_codec` being required *for a `ready` row* is the schema stating that (enforced by the state-scoped `CHECK`; see Revisions), and such an input must fail as non-decodable per `TD-13` rather than reach `ready` with null geometry.
 
 Deliberately **excluded**: frame rate (`r_frame_rate` is a rational string like `30000/1001`, and no phase displays fps — the browser handles playback timing), per-stream language/disposition tags, and rotation metadata (relevant only if the plan later adds orientation-correct thumbnails, which `TD-09` does not require).
 
-**Decision:** _[pending]_
+**Decision:** B (playback-essential set, 8 promoted columns)
+
+**Revisions:**
+
+- 2026-07-29 — Nullability of `duration_seconds`, `width`, `height`, `video_codec`, `container_format` and `size_bytes`
+  moved from column-level `NOT NULL` to a state-scoped constraint: the columns are nullable, and
+  `CHECK (status <> 'ready' OR (duration_seconds IS NOT NULL AND width IS NOT NULL AND height IS NOT NULL AND video_codec IS NOT NULL AND container_format IS NOT NULL AND size_bytes IS NOT NULL))`
+  is added in the same migration. The field set itself is unchanged (Option B stands). _Rationale:_ nullable +
+  state-scoped CHECK — `phase-03-videos/TD-05` creates the draft row at initiate, before any byte is uploaded, and
+  `phase-03-videos/TD-12` only reaches `ready` after the worker probes, so six column-level `NOT NULL` constraints made
+  the initiate INSERT impossible. The invariant those constraints encoded ("a file with no video stream is not a video")
+  is preserved for the state where it is meaningful, mirroring `thumbnail-delivery/TD-02`'s treatment of `thumbnail_key`
+  in this same phase. Raised as IC-1 by `/plan-validate phase-03-videos`.
 
 ---
 
@@ -177,9 +189,9 @@ Deliberately **excluded**: frame rate (`r_frame_rate` is a rational string like 
 
 | ID | Scope | Decision | Recommendation | Choice |
 |----|-------|----------|---------------|--------|
-| TD-01 | Cross-layer | Video Endpoint Authentication Matrix | A (anonymous reads keyed by `publicId`, authenticated writes + owner route keyed by `videoId`) | _[pending]_ |
-| TD-02 | Backend | Draft Ownership — Owning Entity and Grant Scoping | A (`channel_id` FK, resolved from `sub` at initiate) | _[pending]_ |
-| TD-03 | Cross-layer | Access Rule for Videos That Are Not `ready` | A (`ready`-only on public routes with `404`; owner reads any state) | _[pending]_ |
-| TD-04 | Backend | ffprobe Metadata Field Set Persisted on `videos` | B (playback-essential set, 8 promoted columns) | _[pending]_ |
+| TD-01 | Cross-layer | Video Endpoint Authentication Matrix | A (anonymous reads keyed by `publicId`, authenticated writes + owner route keyed by `videoId`) | A (anonymous reads keyed by publicId, authenticated writes + owner route keyed by videoId) |
+| TD-02 | Backend | Draft Ownership — Owning Entity and Grant Scoping | A (`channel_id` FK, resolved from `sub` at initiate) | A (channel_id FK, resolved from sub at initiate) |
+| TD-03 | Cross-layer | Access Rule for Videos That Are Not `ready` | A (`ready`-only on public routes with `404`; owner reads any state) | A (ready-only on public routes with 404; owner reads any state) |
+| TD-04 | Backend | ffprobe Metadata Field Set Persisted on `videos` | B (playback-essential set, 8 promoted columns) | B (playback-essential set, 8 promoted columns) |
 
 **Dependencies between these TDs and the phase-scope doc:** TD-01 depends on `phase-03-videos/TD-05` (route shape of initiate/complete) and `phase-03-videos/TD-11` (delivery routes); TD-02 is depended on by TD-01's owner checks and constrains nothing in `phase-03-videos/TD-03` (keys stay `videoId`-derived); TD-03 depends on `phase-03-videos/TD-12` (the state enum) and `phase-03-videos/TD-13` (persisted failure reason); TD-04 depends on `phase-03-videos/TD-07` (the ffprobe invocation that produces the fields) and feeds `phase-03-videos/TD-12`'s `ready` transition.
