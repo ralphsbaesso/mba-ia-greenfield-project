@@ -200,7 +200,7 @@ Entregar a fundação de vídeo do backend: serviço de armazenamento de arquivo
 ### SI-03.7 — Expor os endpoints de upload (initiate e complete)
 
 **Route:** POST /videos/uploads, POST /videos/{videoId}/uploads/complete
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-uploads.plan.md`
 **Authorization:** initiate — autenticado; complete — autenticado + owner (per `### Authorization Matrix`)
 
 **Description:** Publica a superfície HTTP do upload, que é a fronteira de segurança de todo o caminho — autenticar o initiate é o que escopa a concessão presignada.
@@ -412,7 +412,7 @@ Entregar a fundação de vídeo do backend: serviço de armazenamento de arquivo
 ### SI-03.14 — Expor os endpoints de leitura de vídeo
 
 **Route:** GET /videos/{publicId}, GET /videos/{videoId}
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-read.plan.md`
 **Authorization:** metadata público — `@Public()`, `ready`-only; visão do dono — autenticado + owner (per `### Authorization Matrix`)
 
 **Description:** Publica as duas rotas de leitura — a pública anônima e o poll de status do dono — nas duas famílias disjuntas que a decisão de autorização definiu.
@@ -442,7 +442,7 @@ Entregar a fundação de vídeo do backend: serviço de armazenamento de arquivo
 ### SI-03.15 — Implementar a entrega por redirect presignado (streaming, download e thumbnail)
 
 **Route:** GET /videos/{publicId}/stream, GET /videos/{publicId}/download, GET /videos/{publicId}/thumbnail
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-delivery.plan.md`
 **Authorization:** `@Public()` nas três, `ready`-only (per `### Authorization Matrix`)
 
 **Description:** Entrega reprodução via streaming, download e thumbnail com **um único idioma de entrega** — `302` para URL presignada de vida curta — mantendo a API fora do caminho de dados.
@@ -475,7 +475,7 @@ Entregar a fundação de vídeo do backend: serviço de armazenamento de arquivo
 **Description:** Fecha a higiene de storage da fase: o dono pode cancelar explicitamente, e uploads abandonados têm suas partes acumuladas recuperadas.
 
 **Route:** DELETE /videos/{videoId}/uploads
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-upload-cancel.plan.md`
 **Authorization:** autenticado + owner (per `### Authorization Matrix`)
 
 **Technical actions:**
@@ -507,7 +507,7 @@ Entregar a fundação de vídeo do backend: serviço de armazenamento de arquivo
 ### SI-03.17 — Expor o reprocessamento guardado
 
 **Route:** POST /videos/{videoId}/reprocess
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-reprocess.plan.md`
 **Authorization:** autenticado + owner (per `### Authorization Matrix`)
 
 **Description:** Permite que um ambiente corrigido recupere um vídeo que falhou, sem exigir um novo upload — como caminho explícito, não como retry automático.
