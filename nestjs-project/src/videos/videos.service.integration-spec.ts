@@ -128,14 +128,7 @@ describe('VideosService (integration)', () => {
 
       expect(result).toEqual({
         publicId: video.public_id,
-        durationSeconds: READY_METADATA.duration_seconds,
-        width: READY_METADATA.width,
-        height: READY_METADATA.height,
-        videoCodec: READY_METADATA.video_codec,
-        audioCodec: READY_METADATA.audio_codec,
-        containerFormat: READY_METADATA.container_format,
-        bitrateBps: READY_METADATA.bitrate_bps,
-        sizeBytes: READY_METADATA.size_bytes,
+        ...READY_METADATA,
       });
     });
 
@@ -144,9 +137,9 @@ describe('VideosService (integration)', () => {
 
       const result = await service.findPublicByPublicId(video.public_id);
 
-      expect(typeof result.durationSeconds).toBe('number');
-      expect(typeof result.bitrateBps).toBe('number');
-      expect(typeof result.sizeBytes).toBe('number');
+      expect(typeof result.duration_seconds).toBe('number');
+      expect(typeof result.bitrate_bps).toBe('number');
+      expect(typeof result.size_bytes).toBe('number');
     });
 
     it.each([VideoStatus.DRAFT, VideoStatus.PROCESSING, VideoStatus.ERROR])(
@@ -215,7 +208,7 @@ describe('VideosService (integration)', () => {
       const result = await service.findOwnedById(ownerId, video.id);
 
       expect(result.status).toBe(VideoStatus.ERROR);
-      expect(result.failureReason).toBe(reason);
+      expect(result.failure_reason).toBe(reason);
     });
 
     it('should give a non-owner the same answer as an unknown id', async () => {

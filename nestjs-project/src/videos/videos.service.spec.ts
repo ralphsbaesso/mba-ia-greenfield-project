@@ -81,14 +81,14 @@ describe('VideosService', () => {
 
       expect(result).toEqual({
         publicId: PUBLIC_ID,
-        durationSeconds: 12.345,
+        duration_seconds: 12.345,
         width: 1920,
         height: 1080,
-        videoCodec: 'h264',
-        audioCodec: 'aac',
-        containerFormat: 'mov,mp4,m4a,3gp,3g2,mj2',
-        bitrateBps: 188_900,
-        sizeBytes: 47_225,
+        video_codec: 'h264',
+        audio_codec: 'aac',
+        container_format: 'mov,mp4,m4a,3gp,3g2,mj2',
+        bitrate_bps: 188_900,
+        size_bytes: 47_225,
       });
     });
 
@@ -156,8 +156,8 @@ describe('VideosService', () => {
       const result = await service.findOwnedById(USER_ID, VIDEO_ID);
 
       expect(result.status).toBe(VideoStatus.DRAFT);
-      expect(result.durationSeconds).toBeNull();
-      expect(result.failureReason).toBeNull();
+      expect(result.duration_seconds).toBeNull();
+      expect(result.failure_reason).toBeNull();
     });
 
     it('should return a failed video with its persisted reason', async () => {
@@ -172,7 +172,7 @@ describe('VideosService', () => {
       const result = await service.findOwnedById(USER_ID, VIDEO_ID);
 
       expect(result.status).toBe(VideoStatus.ERROR);
-      expect(result.failureReason).toBe(
+      expect(result.failure_reason).toBe(
         'Input has no decodable video stream: moov atom not found',
       );
     });

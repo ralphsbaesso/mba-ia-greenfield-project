@@ -156,9 +156,15 @@
   - **Duplicação conhecida, não resolvida aqui:** `VideoUploadsService.findOwnedVideo` (SI-03.6) faz a mesma resolução de dono que `VideosService.findOwnedEntity`. Exportei `findOwnedEntity` público justamente para ser o ponto único, mas não refatorei o uploads agora: os testes dele exercitam a lógica de dono de verdade e trocá-la por um mock de `VideosService` enfraqueceria a cobertura existente. SI-03.16 (cancel) e SI-03.17 (reprocess) são o terceiro e quarto chamadores — é lá que a consolidação deve acontecer, e aí os testes migram junto.
 
 ### SI-03.14 — Expor os endpoints de leitura de vídeo
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 14 passing no e2e novo (`test/videos-read.e2e-spec.ts`, cobrindo os 6 cenários de `specs/videos-read.plan.md`) + 30 das suites de SI-03.13 reexecutadas após a mudança de nomes de campo
+- **Observations:**
+  - **Desambiguação de rota:** a família do dono virou `GET /videos/me/{videoId}` (3 segmentos) contra a pública `GET /videos/{publicId}` (2 segmentos) — disjuntas por contagem de segmentos, então a ordem de registro no Express não importa. A Routing note de `### API Contracts` autoriza explicitamente escolher um segmento próprio para a família do dono; o que é vinculante é a `### Authorization Matrix`, não o path literal. `GET /videos/me` fica livre para a listagem "meus vídeos" da Fase 04.
+  - **Nomes de campo do payload mudaram em relação ao que SI-03.13 entregou.** O test spec 1.1 enumera `publicId`, `duration_seconds`, `width`, `video_codec`, … e o `### API Contracts` diz o mesmo nos dois endpoints de leitura. Adotei isso literalmente e reformatei `PublicVideo`/`OwnerVideo` (era camelCase), atualizando as suites de SI-03.13 junto. **Fica o registro de que o resultado é um payload de casing misto** (`publicId` + `duration_seconds`), inconsistente com as respostas de upload que são camelCase puro. Normalizar isso é decisão de contrato, não de implementação — cabe à Fase 04, antes de existir frontend consumindo.
+  - O teste de "não é oráculo de existência" compara `body` inteiro entre um vídeo em `processing` e um `publicId` inexistente, em vez de checar 404 nos dois. Vale o mesmo para o não-dono na rota do dono.
+  - Os três testes de desambiguação cobrem os dois sentidos: id interno na rota pública → 404, e `public_id` na rota do dono → 404 (nunca um 200 servido pelo handler público); e o terceiro confirma handlers distintos pela ausência/presença de `status` no body.
+  - `VideosModule` ganhou o controller. Como o worker importa `VideosModule`, o contexto standalone passa a instanciar um controller — **verificado subindo `npm run start:worker` de verdade**: sobe limpo, sem rotas (application context não tem router). O teste de compilação de módulo sozinho não provaria isso.
+  - `openapi.json` regenerado com `npm run openapi:export`: as duas rotas aparecem, a pública **sem** `security` e a do dono com `access-token`. O e2e assere o mesmo contra o documento construído em memória.
 
 ### SI-03.15 — Implementar a entrega por redirect presignado (streaming, download e thumbnail)
 - **Status:** pending

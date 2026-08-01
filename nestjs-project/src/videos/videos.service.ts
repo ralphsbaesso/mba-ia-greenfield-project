@@ -6,16 +6,21 @@ import { VideoNotFoundException } from '../common/exceptions/domain.exception';
 import { Video, VideoStatus } from './entities/video.entity';
 import { isVideoId } from './videos.id';
 
-/** The probe-derived columns, shared by both views (Data Model → Video). */
+/**
+ * The probe-derived columns, shared by both views. The field names are the ones
+ * `### API Contracts` lists for both read endpoints — the column names verbatim,
+ * unlike the camelCase upload responses. Kept as the contract states them rather
+ * than normalized, so the wire shape has a single source of truth.
+ */
 export interface VideoMetadata {
-  durationSeconds: number | null;
+  duration_seconds: number | null;
   width: number | null;
   height: number | null;
-  videoCodec: string | null;
-  audioCodec: string | null;
-  containerFormat: string | null;
-  bitrateBps: number | null;
-  sizeBytes: number | null;
+  video_codec: string | null;
+  audio_codec: string | null;
+  container_format: string | null;
+  bitrate_bps: number | null;
+  size_bytes: number | null;
 }
 
 /**
@@ -31,19 +36,19 @@ export interface PublicVideo extends VideoMetadata {
 export interface OwnerVideo extends VideoMetadata {
   publicId: string;
   status: VideoStatus;
-  failureReason: string | null;
+  failure_reason: string | null;
 }
 
 function toMetadata(video: Video): VideoMetadata {
   return {
-    durationSeconds: video.duration_seconds,
+    duration_seconds: video.duration_seconds,
     width: video.width,
     height: video.height,
-    videoCodec: video.video_codec,
-    audioCodec: video.audio_codec,
-    containerFormat: video.container_format,
-    bitrateBps: video.bitrate_bps,
-    sizeBytes: video.size_bytes,
+    video_codec: video.video_codec,
+    audio_codec: video.audio_codec,
+    container_format: video.container_format,
+    bitrate_bps: video.bitrate_bps,
+    size_bytes: video.size_bytes,
   };
 }
 
@@ -55,7 +60,7 @@ export function toOwnerVideo(video: Video): OwnerVideo {
   return {
     publicId: video.public_id,
     status: video.status,
-    failureReason: video.failure_reason,
+    failure_reason: video.failure_reason,
     ...toMetadata(video),
   };
 }
