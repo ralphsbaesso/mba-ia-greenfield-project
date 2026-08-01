@@ -1,0 +1,18 @@
+FROM node:25.6.0-slim
+
+# Debian's ffmpeg package ships both `ffmpeg` and `ffprobe`, which keeps the
+# binaries out of `npm install` and out of the API image (phase-03-videos/TD-07).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg procps \
+  && rm -rf /var/lib/apt/lists/*
+
+# Created before the volume is attached and owned by `node`: a named volume
+# inherits the ownership of the image directory it covers, and the worker runs as
+# `node` (phase-03-videos/TD-08).
+RUN mkdir -p /var/tmp/streamtube && chown node:node /var/tmp/streamtube
+
+WORKDIR /home/node/app
+
+USER node
+
+CMD [ "tail", "-f", "/dev/null" ]

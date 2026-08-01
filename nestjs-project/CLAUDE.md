@@ -40,6 +40,20 @@ Services:
 - `minio` — S3-compatible object storage, API `9000`, console `9001`, user/password `streamtube`
 - `minio-init` — one-shot; creates the private bucket `streamtube` and exits
 - `redis` — Redis 7, port `6379`, `maxmemory-policy noeviction` (BullMQ requires it)
+- `video-worker` — video processing worker; same source tree, separate entrypoint (`src/worker.ts`), **no HTTP port**. Built from `Dockerfile.worker.dev`, which is the only image carrying `ffmpeg`/`ffprobe`.
+
+### Video worker
+
+The worker container follows the same convention as `nestjs-api`: `docker compose up -d` starts the **container**, not the process. Start the worker explicitly, in background:
+
+```bash
+docker compose exec video-worker npm run start:worker:dev   # watch mode
+docker compose exec video-worker npm run start:worker       # single run
+```
+
+**Do not leave the worker process running while the test suite runs.** It consumes `video-processing`, and several suites assert on queue contents (`getWaitingCount()`); a live consumer makes them flaky.
+
+`ffmpeg`/`ffprobe` live **only** in the worker image — verify with `docker compose exec video-worker ffprobe -version` and confirm `docker compose exec nestjs-api command -v ffprobe` finds nothing. The worker's scratch area is the named volume `worker-tmp`, mounted at `/var/tmp/streamtube` (`WORKER_TMP_DIR`) and owned by `node`.
 
 ### MinIO image pin
 

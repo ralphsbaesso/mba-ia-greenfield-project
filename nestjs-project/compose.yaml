@@ -19,6 +19,27 @@ services:
       redis:
         condition: service_healthy
 
+  # Segundo container, mesmo código-fonte, entrypoint separado (`src/worker.ts`).
+  # Sem `ports`: o worker consome fila, não serve HTTP.
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker.dev
+    volumes:
+      - .:/home/node/app
+      - worker-tmp:/var/tmp/streamtube
+    environment:
+      - WORKER_TMP_DIR=/var/tmp/streamtube
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   db:
     image: postgres:17
     ports:
@@ -85,4 +106,7 @@ services:
 
 volumes:
   minio-data:
+  # Scratch dedicado do worker: o objeto é baixado inteiro para arquivo temporário
+  # antes do ffprobe/ffmpeg, então o pico é um arquivo por job (TD-08).
+  worker-tmp:
 

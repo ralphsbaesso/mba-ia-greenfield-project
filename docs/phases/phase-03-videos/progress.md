@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/17 completed
+**SIs:** 8/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -80,9 +80,16 @@
   - `openapi.json` foi regenerado (`npm run openapi:export`) e agora descreve os dois endpoints: respostas tipadas por status (`201/400/401/500` e `200/400/401/404/409`), todas as de erro apontando para `ApiErrorEnvelope`, e `videoId` documentado como path param `uuid`.
 
 ### SI-03.8 — Provisionar a imagem e o entrypoint do worker
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 1 passing (compilation test do `VideoProcessingModule`, que sobe o contexto raiz do worker contra Postgres e Redis reais)
+- **Observations:**
+  - **Bug real pego ao bootar o entrypoint à mão:** `autoLoadEntities: true` não funciona no worker. Ele só registra entidades de módulos que chamam `forFeature`, e o worker importa apenas `VideosModule` — mas o TypeORM constrói metadata sobre o **fecho de relações** (`Video` → `Channel` → `User`), então o boot morria com `Entity metadata for Video#channel was not found`. Trocado por uma lista explícita `WORKER_ENTITIES = [User, Channel, Video]`, que é preferível a importar `ChannelsModule`/`UsersModule` (serviços que o worker não usa) só para satisfazer o autoload.
+  - O container do worker **não roda o processo do worker automaticamente** (`CMD tail -f /dev/null`, igual ao `nestjs-api`), e isso é deliberado por dois motivos: mantém a convenção documentada de que `docker compose up -d` sobe infra e não processos de aplicação; e, principalmente, **um worker vivo consumiria a fila durante os testes** — as suítes de SI-03.6 e do e2e de SI-03.7 asseveram `getWaitingCount()`. Scripts `start:worker` / `start:worker:dev` / `start:worker:prod` adicionados ao `package.json`, e o aviso está no `nestjs-project/CLAUDE.md`.
+  - Os 4 acceptance criteria foram verificados à mão no ambiente: container `Up` sem nenhuma porta publicada; `ffmpeg 5.1.9` e `ffprobe 5.1.9` respondem no worker; `command -v ffprobe`/`ffmpeg` **não** acham nada no container da API; `getent hosts db redis minio` resolve os três pelo nome de serviço; e o `src/worker.ts` sobe o contexto standalone (`TypeOrmCoreModule`, `BullModule`, `StorageModule` inicializados, nenhum servidor HTTP) e permanece vivo.
+  - O volume `worker-tmp` é montado em `/var/tmp/streamtube`. O `mkdir` + `chown node:node` acontece **no Dockerfile, antes do `USER node`** — um named volume herda a ownership do diretório da imagem que ele cobre, e sem isso o volume nasceria de `root` e o worker (que roda como `node`) não escreveria nele. Verificado com `touch` dentro do container.
+  - `WORKER_TMP_DIR=/var/tmp/streamtube` foi declarado no serviço do Compose, mas **ainda não é lido por código nenhum** — quem vai consumir é o `source-file.service.ts` de SI-03.9. Não entrou no schema Joi de propósito: o worker precisa dela, a API não, e torná-la `required()` quebraria o boot da API.
+  - Action 4 (assets não-TypeScript no `nest-cli.json`) ficou sem mudança: o worker não usa nenhum asset em runtime — os únicos declarados são os templates `.hbs` do mail, que são exclusivos da API.
+  - O teste ficou como `video-processing.module.spec.ts` (nome do plano) mesmo abrindo conexão real com o banco, o que a "Test Type Selection" do `nestjs-project/CLAUDE.md` normalmente mandaria para `.integration-spec.ts`. É a convenção já estabelecida no projeto para **compilation tests de módulo** — `videos.module.spec.ts` e `video-queue.module.spec.ts` fazem o mesmo.
 
 ### SI-03.9 — Implementar o download para arquivo temporário e a sonda `ffprobe`
 - **Status:** pending
