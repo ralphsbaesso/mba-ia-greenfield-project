@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 12/17 completed
+**SIs:** 13/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -145,9 +145,15 @@
   - O spec de integração exercita as falhas com arquivos de verdade: `not-a-video.txt` no bucket para o permanente e objeto ausente para o transitório, com `attempts: 2` e backoff de 50ms sobrescritos no `add` — a política sob teste é o que acontece na exaustão, não quanto tempo o backoff real de 5s leva.
 
 ### SI-03.13 — Implementar as leituras de vídeo (pública `ready`-only e do dono)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 30 passing (14 unit com repo e `ChannelsService` mockados + 15 integration contra Postgres real + 1 de compilação do módulo); regressão de `src/videos` inteira reexecutada: 19 suites / 192 testes verdes
+- **Observations:**
+  - O filtro `status = 'ready'` vive **dentro** do `where` que resolve o `public_id` — uma query só. Teste explícito de que `findOne` é chamado uma única vez e de que um vídeo para de resolver no instante em que sai de `ready`, sem decisão em cache sobrevivendo à mudança.
+  - As duas resoluções devolvem **shapes diferentes de propósito**: `PublicVideo` não carrega `status` (é `ready` por construção) nem o uuid interno; `OwnerVideo` carrega `status` + `failureReason`. Payload em camelCase, como as respostas de upload das SIs anteriores; as colunas do Data Model estão em snake_case só no banco.
+  - Todo miss — id malformado, id desconhecido, vídeo de outro dono — devolve o **mesmo** `VideoNotFoundException`. Os testes comparam `errorCode`, `httpStatus` **e** `message` entre os casos em vez de checar cada um isoladamente: a exigência é indistinguibilidade, não "os dois dão 404".
+  - `isVideoId` roda antes da query, então um path param malformado nunca vira `invalid input syntax for uuid` (que seria 500 e, pior, uma resposta diferente de "desconhecido").
+  - `VideosModule` passou a importar `ChannelsModule` e a prover/exportar `VideosService`. O dono é resolvido via canal, e o lookup `sub` → `channel_id` mora em `ChannelsService` por decisão de TD-02 — o docstring de lá diz isso explicitamente. Como o `VideoProcessingModule` (worker) importa `VideosModule`, o worker passou a carregar `ChannelsModule` junto; `WORKER_ENTITIES` já incluía `Channel`, e a suite de compilação do módulo do worker continua verde.
+  - **Duplicação conhecida, não resolvida aqui:** `VideoUploadsService.findOwnedVideo` (SI-03.6) faz a mesma resolução de dono que `VideosService.findOwnedEntity`. Exportei `findOwnedEntity` público justamente para ser o ponto único, mas não refatorei o uploads agora: os testes dele exercitam a lógica de dono de verdade e trocá-la por um mock de `VideosService` enfraqueceria a cobertura existente. SI-03.16 (cancel) e SI-03.17 (reprocess) são o terceiro e quarto chamadores — é lá que a consolidação deve acontecer, e aí os testes migram junto.
 
 ### SI-03.14 — Expor os endpoints de leitura de vídeo
 - **Status:** pending

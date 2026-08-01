@@ -7,11 +7,12 @@ import { VerificationToken } from '../auth/entities/verification-token.entity';
 import { createTestDataSource } from '../test/create-test-data-source';
 import { Video } from './entities/video.entity';
 import { VideosModule } from './videos.module';
+import { VideosService } from './videos.service';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
 
 describe('VideosModule', () => {
-  it('should compile with TypeOrmModule.forFeature([Video])', async () => {
+  it('should compile with TypeOrmModule.forFeature([Video]) and provide VideosService', async () => {
     const module = await Test.createTestingModule({
       imports: [
         TypeOrmModule.forRoot({
@@ -23,6 +24,8 @@ describe('VideosModule', () => {
     }).compile();
 
     expect(module.get(getRepositoryToken(Video))).toBeDefined();
+    // VideosService depends on ChannelsService, which the module must import.
+    expect(module.get(VideosService)).toBeDefined();
     await module.close();
   }, 30000);
 });
