@@ -9,7 +9,10 @@ import storageConfig from '../../config/storage.config';
 import { StorageModule } from '../../storage/storage.module';
 import { User } from '../../users/entities/user.entity';
 import { Video } from '../entities/video.entity';
+import workerConfig from '../../config/worker.config';
 import { VideosModule } from '../videos.module';
+import { FfprobeService } from './ffprobe.service';
+import { SourceFileService } from './source-file.service';
 import { VideoQueueModule } from './video-queue.module';
 
 /**
@@ -35,7 +38,7 @@ const WORKER_ENTITIES = [User, Channel, Video];
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, redisConfig, storageConfig],
+      load: [databaseConfig, redisConfig, storageConfig, workerConfig],
       validationSchema: envValidationSchema,
       validationOptions: { allowUnknown: true, abortEarly: false },
     }),
@@ -57,5 +60,7 @@ const WORKER_ENTITIES = [User, Channel, Video];
     VideosModule,
     StorageModule,
   ],
+  providers: [SourceFileService, FfprobeService],
+  exports: [SourceFileService, FfprobeService],
 })
 export class VideoProcessingModule {}

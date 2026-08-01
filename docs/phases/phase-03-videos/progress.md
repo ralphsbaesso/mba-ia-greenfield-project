@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/17 completed
+**SIs:** 9/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -92,9 +92,18 @@
   - O teste ficou como `video-processing.module.spec.ts` (nome do plano) mesmo abrindo conexão real com o banco, o que a "Test Type Selection" do `nestjs-project/CLAUDE.md` normalmente mandaria para `.integration-spec.ts`. É a convenção já estabelecida no projeto para **compilation tests de módulo** — `videos.module.spec.ts` e `video-queue.module.spec.ts` fazem o mesmo.
 
 ### SI-03.9 — Implementar o download para arquivo temporário e a sonda `ffprobe`
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 25 passing (13 unit do mapeamento + 7 integration com `ffprobe` real + 7 integration do `SourceFileService` contra MinIO real) — rodados **dentro do container `video-worker`**
+- **Observations:**
+  - **Os testes de `ffprobe` só passam no container `video-worker`.** O binário existe só naquela imagem, por decisão de SI-03.8. Consequência para a verificação final da fase: **a suíte completa deve rodar no `video-worker`**, que monta o mesmo código e lê o mesmo `.env` — rodar no `nestjs-api` quebra o `ffprobe.service.integration-spec.ts`. Documentado no `nestjs-project/CLAUDE.md`.
+  - **Wart corrigido durante a implementação:** o `catch` do `execFile` classificava *qualquer* falha como `NoDecodableVideoStreamError`, o que inclui o `ENOENT` de binário ausente. Numa imagem de worker mal configurada isso marcaria **todo** vídeo como permanentemente falho (`status = error`, sem retry) — o sintoma mais barulhento possível reportado como o mais silencioso. Agora `ENOENT` vira erro comum (classe transitória, com retry), e há teste com uma subclasse que aponta para um binário inexistente.
+  - Três classes de falha ficam distintas para SI-03.12 escolher a política: `FfprobeTimeoutError` (o kill do timeout), `NoDecodableVideoStreamError` (veredito do próprio ffprobe sobre o input — permanente) e `Error` comum (infraestrutura, transitória).
+  - `SourceFileService.withDownloadedObject(key, use)` é **callback-form de propósito**: torna "a limpeza sempre roda" uma propriedade da API, não de cada chamador lembrar do `finally`. O `rm` usa `force: true` para que um download que falhou antes de criar o arquivo não vire um segundo erro na saída.
+  - `VideoProbe` **não tem campo de tamanho**. Em vez de expor `format.size` do ffprobe "só para conferência", a forma do tipo torna a confusão impossível: `size_bytes` só pode vir de `SourceFileService.sizeOf()`, que lê o `ContentLength` do objeto (`video-authorization-and-metadata/TD-04`).
+  - `WORKER_TMP_DIR` agora é lido por `src/config/worker.config.ts`, com default `os.tmpdir()` — assim API e containers de teste, que não montam o volume `worker-tmp`, continuam funcionando. Continua fora do Joi pelo mesmo motivo de SI-03.8.
+  - Action 2 (concorrência 1) entrou como a constante `VIDEO_PROCESSING_CONCURRENCY = 1`, ainda **não aplicada** — quem a consome é o `@Processor` de SI-03.11. O valor coincide com o default do BullMQ, então o comportamento efetivo já está certo; a constante existe para que aumentar isso seja decisão e não acidente.
+  - Fixtures de vídeo commitadas em `test/fixtures/` (2s, 320x240, h264): `sample-with-audio.mp4` (46KB, aac), `sample-no-audio.mp4` (28KB) e `not-a-video.txt`. Geradas com os geradores `testsrc`/`sine` do próprio ffmpeg do worker — determinísticas e pequenas.
+  - O AC "tamanho registrado é o do storage mesmo quando o ffprobe diverge" foi testado pela via estrutural (o probe não carrega tamanho + `sizeOf` lê do objeto) mais um teste com arquivo local divergente no mesmo diretório de scratch, em vez de forjar um arquivo cujo header mente sobre o tamanho.
 
 ### SI-03.10 — Implementar a geração automática de thumbnail
 - **Status:** pending

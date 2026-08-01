@@ -53,6 +53,14 @@ docker compose exec video-worker npm run start:worker       # single run
 
 **Do not leave the worker process running while the test suite runs.** It consumes `video-processing`, and several suites assert on queue contents (`getWaitingCount()`); a live consumer makes them flaky.
 
+**Tests that spawn `ffmpeg`/`ffprobe` must run in `video-worker`, not in `nestjs-api`** — the binaries are not in the API image:
+
+```bash
+docker compose exec video-worker npm test -- --runInBand src/videos/processing/ffprobe.service.integration-spec.ts
+```
+
+The worker container mounts the same source tree and reads the same `.env`, so **the full suite can simply be run there** and every suite passes. Running it in `nestjs-api` fails the ffprobe integration spec.
+
 `ffmpeg`/`ffprobe` live **only** in the worker image — verify with `docker compose exec video-worker ffprobe -version` and confirm `docker compose exec nestjs-api command -v ffprobe` finds nothing. The worker's scratch area is the named volume `worker-tmp`, mounted at `/var/tmp/streamtube` (`WORKER_TMP_DIR`) and owned by `node`.
 
 ### MinIO image pin
