@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 13/17 completed
+**SIs:** 15/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -167,9 +167,18 @@
   - `openapi.json` regenerado com `npm run openapi:export`: as duas rotas aparecem, a pública **sem** `security` e a do dono com `access-token`. O e2e assere o mesmo contra o documento construído em memória.
 
 ### SI-03.15 — Implementar a entrega por redirect presignado (streaming, download e thumbnail)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 9 passing no e2e novo (`test/videos-delivery.e2e-spec.ts`, cobrindo os 5 grupos de `specs/videos-delivery.plan.md`) + 30 das suites de `src/videos` e 14+6 dos e2e de leitura/swagger reexecutados
+- **Observations:**
+  - **Onde a lógica ficou:** os três endpoints estão em `VideosController` como o SI pede, mas a resolução da URL presignada foi para um `VideoDeliveryService` novo (`src/videos/delivery/`). O controller só traduz para HTTP; o filtro `ready`-only vem de um `VideosService.findReadyEntityByPublicId` extraído de `findPublicByPublicId`, que agora o chama — é o mesmo query, então metadata e as três rotas de entrega não podem divergir por descuido futuro.
+  - **O `302` responde com corpo vazio, de propósito.** `res.redirect` do Express anexa uma página HTML de cortesia; numa API cuja tese é ficar fora do caminho de dados, isso são bytes sem função. O handler faz `setHeader` + `status(302).end()`.
+  - **`@Header()` do Nest foi descartado para o `Cache-Control`.** Lendo `router-execution-context.js` (linha 44) os headers declarativos são aplicados **antes** do handler rodar — um `404` de vídeo não-`ready` sairia com `max-age`, e o browser cachearia a ausência de um vídeo que pode ficar pronto em seguida. O header é setado no caminho de sucesso.
+  - `Cache-Control` divergente por rota: `public, max-age=300` na thumbnail (metade do TTL da assinatura, então um `302` cacheado nunca entrega assinatura vencida) e `no-store` em stream/download — a rota é o ponto de autorização, e a visibilidade unlisted/private da Fase 04 precisa poder apertar sem esperar cache expirar.
+  - **Desvio deliberado do passo 2 do cenário 5.1 do test spec.** Reescrever o timestamp da assinatura invalida a *assinatura*, não a *validade* — o `403` viria de tampering e o teste passaria mesmo se a expiração não funcionasse. Em vez disso o teste assina a mesma chave com `expiresIn: 1`, espera 2s e só então chama: o `403` só pode vir de expiração. O passo 3 (URL original ainda dentro da janela → `200`) fecha o argumento.
+  - `VideosModule` passou a importar `StorageModule`, então `videos.module.spec.ts` e `videos.service.integration-spec.ts` precisaram de `ConfigModule.forRoot({ isGlobal: true, load: [storageConfig] })` — mesmo padrão já usado em `video-uploads.service.integration-spec.ts`.
+  - O throttler global (10 req/min) é limpo entre as chamadas dentro dos testes do grupo *Ready-only guard*: são 9 requisições num teste só, e sem isso o que estaria sendo medido é o rate limiter, não o filtro `ready`.
+  - Contexto standalone do worker verificado subindo `npm run start:worker` de verdade após a mudança de `VideosModule` — sobe limpo. `openapi.json` regenerado: as três rotas aparecem sem `security` e com `Location`/`Cache-Control` documentados no `302`.
+  - **Incidente de ambiente (fora do escopo do SI, resolvido):** matei uma execução de suíte completa que estava em background e ela parou dentro do spec de migrations — que desfaz as migrations e só as restaura no `afterAll`. O banco ficou meio-revertido (`users` e `videos` sumidos) e toda suíte com DB quebrou. Recuperado com `typeorm schema:drop` + `migration:run`, com autorização do usuário. Lição prática: **não interromper a suíte completa**, porque o spec de migrations não é resiliente a kill.
 
 ### SI-03.16 — Implementar o cancelamento de upload e a limpeza de rascunhos órfãos
 - **Status:** pending

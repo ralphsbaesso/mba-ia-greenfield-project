@@ -840,6 +840,159 @@
           "videos"
         ]
       }
+    },
+    "/videos/{publicId}/stream": {
+      "get": {
+        "description": "The API never carries the video bytes: it answers `302` and the player talks to the storage server directly, which is also what gets `Range`/`206` semantics for free instead of hand-rolling partial content.",
+        "operationId": "VideosController_stream",
+        "parameters": [
+          {
+            "name": "publicId",
+            "required": true,
+            "in": "path",
+            "description": "Short public identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Presigned URL in `Location`, valid for minutes. The response body is empty — the bytes come from the storage server.",
+            "headers": {
+              "Location": {
+                "description": "Short-lived presigned `GET` URL",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "Cache-Control": {
+                "description": "Caches the redirect, never the presigned object — the signature rotates per request",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VIDEO_NOT_FOUND — unknown identifier or a video that is not ready; the three delivery routes inherit the metadata route’s `ready`-only filter verbatim, so none of them is an existence oracle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Redirect to a short-lived presigned URL for playback",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/videos/{publicId}/download": {
+      "get": {
+        "description": "Same object as `/stream`; the difference is the `response-content-disposition` carried into the signature.",
+        "operationId": "VideosController_download",
+        "parameters": [
+          {
+            "name": "publicId",
+            "required": true,
+            "in": "path",
+            "description": "Short public identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Presigned URL in `Location`, valid for minutes. The response body is empty — the bytes come from the storage server.",
+            "headers": {
+              "Location": {
+                "description": "Short-lived presigned `GET` URL",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "Cache-Control": {
+                "description": "Caches the redirect, never the presigned object — the signature rotates per request",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VIDEO_NOT_FOUND — unknown identifier or a video that is not ready; the three delivery routes inherit the metadata route’s `ready`-only filter verbatim, so none of them is an existence oracle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Redirect to the same object, signed as an attachment",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/videos/{publicId}/thumbnail": {
+      "get": {
+        "description": "The content type is fixed at signing time, so the browser renders the image inline whatever the worker wrote on the object. The `Cache-Control` sits on this `302`, never on the image: the signature rotates per request, so the image itself can never be cached.",
+        "operationId": "VideosController_thumbnail",
+        "parameters": [
+          {
+            "name": "publicId",
+            "required": true,
+            "in": "path",
+            "description": "Short public identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Presigned URL in `Location`, valid for minutes. The response body is empty — the bytes come from the storage server.",
+            "headers": {
+              "Location": {
+                "description": "Short-lived presigned `GET` URL",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "Cache-Control": {
+                "description": "Caches the redirect, never the presigned object — the signature rotates per request",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VIDEO_NOT_FOUND — unknown identifier or a video that is not ready; the three delivery routes inherit the metadata route’s `ready`-only filter verbatim, so none of them is an existence oracle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Redirect to a presigned thumbnail URL pinned to `image/jpeg`",
+        "tags": [
+          "videos"
+        ]
+      }
     }
   },
   "info": {

@@ -80,6 +80,17 @@ export class VideosService {
    * for "does not exist" (video-authorization-and-metadata/TD-03).
    */
   async findPublicByPublicId(publicId: string): Promise<PublicVideo> {
+    return toPublicVideo(await this.findReadyEntityByPublicId(publicId));
+  }
+
+  /**
+   * The entity behind the public view, for the delivery routes that need the
+   * storage keys. Sharing this method with `findPublicByPublicId` is what keeps
+   * the `ready` filter identical across metadata, stream, download and thumbnail:
+   * a delivery route that resolved a video the metadata route refuses would be an
+   * existence oracle (thumbnail-delivery/TD-01).
+   */
+  async findReadyEntityByPublicId(publicId: string): Promise<Video> {
     const video = await this.videos.findOne({
       where: { public_id: publicId, status: VideoStatus.READY },
     });
@@ -88,7 +99,7 @@ export class VideosService {
       throw new VideoNotFoundException();
     }
 
-    return toPublicVideo(video);
+    return video;
   }
 
   /**

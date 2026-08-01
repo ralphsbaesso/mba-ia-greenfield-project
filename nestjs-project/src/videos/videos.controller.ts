@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Param, Res } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -7,10 +7,16 @@ import {
   ApiTags,
   getSchemaPath,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
+import {
+  THUMBNAIL_REDIRECT_CACHE_CONTROL,
+  VIDEO_REDIRECT_CACHE_CONTROL,
+} from './delivery/video-delivery.constants';
+import { VideoDeliveryService } from './delivery/video-delivery.service';
 import type { OwnerVideo, PublicVideo } from './videos.service';
 import { VideosService } from './videos.service';
 
@@ -26,10 +32,36 @@ const METADATA_PROPERTIES = {
   size_bytes: { type: 'integer', nullable: true, example: 47225 },
 } as const;
 
+/** The three delivery routes share one response shape, documented once. */
+const REDIRECT_RESPONSE = {
+  description:
+    'Presigned URL in `Location`, valid for minutes. The response body is empty — the bytes come from the storage server.',
+  headers: {
+    Location: {
+      description: 'Short-lived presigned `GET` URL',
+      schema: { type: 'string', format: 'uri' },
+    },
+    'Cache-Control': {
+      description:
+        'Caches the redirect, never the presigned object — the signature rotates per request',
+      schema: { type: 'string' },
+    },
+  },
+} as const;
+
+const DELIVERY_NOT_FOUND_RESPONSE = {
+  description:
+    'VIDEO_NOT_FOUND — unknown identifier or a video that is not ready; the three delivery routes inherit the metadata route’s `ready`-only filter verbatim, so none of them is an existence oracle',
+  schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+} as const;
+
 @ApiTags('videos')
 @Controller('videos')
 export class VideosController {
-  constructor(private readonly videos: VideosService) {}
+  constructor(
+    private readonly videos: VideosService,
+    private readonly delivery: VideoDeliveryService,
+  ) {}
 
   /**
    * The owner family gets its own path segment so the two read routes are
@@ -122,4 +154,78 @@ export class VideosController {
   async findPublic(@Param('publicId') publicId: string): Promise<PublicVideo> {
     return this.videos.findPublicByPublicId(publicId);
   }
+
+  @Public()
+  @Get(':publicId/stream')
+  @ApiOperation({
+    summary: 'Redirect to a short-lived presigned URL for playback',
+    description:
+      'The API never carries the video bytes: it answers `302` and the player talks to the storage server directly, which is also what gets `Range`/`206` semantics for free instead of hand-rolling partial content.',
+  })
+  @ApiParam({ name: 'publicId', description: 'Short public identifier' })
+  @ApiResponse({ status: 302, ...REDIRECT_RESPONSE })
+  @ApiResponse({ status: 404, ...DELIVERY_NOT_FOUND_RESPONSE })
+  async stream(
+    @Param('publicId') publicId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    redirectTo(
+      res,
+      await this.delivery.resolveStreamUrl(publicId),
+      VIDEO_REDIRECT_CACHE_CONTROL,
+    );
+  }
+
+  @Public()
+  @Get(':publicId/download')
+  @ApiOperation({
+    summary: 'Redirect to the same object, signed as an attachment',
+    description:
+      'Same object as `/stream`; the difference is the `response-content-disposition` carried into the signature.',
+  })
+  @ApiParam({ name: 'publicId', description: 'Short public identifier' })
+  @ApiResponse({ status: 302, ...REDIRECT_RESPONSE })
+  @ApiResponse({ status: 404, ...DELIVERY_NOT_FOUND_RESPONSE })
+  async download(
+    @Param('publicId') publicId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    redirectTo(
+      res,
+      await this.delivery.resolveDownloadUrl(publicId),
+      VIDEO_REDIRECT_CACHE_CONTROL,
+    );
+  }
+
+  @Public()
+  @Get(':publicId/thumbnail')
+  @ApiOperation({
+    summary: 'Redirect to a presigned thumbnail URL pinned to `image/jpeg`',
+    description:
+      'The content type is fixed at signing time, so the browser renders the image inline whatever the worker wrote on the object. The `Cache-Control` sits on this `302`, never on the image: the signature rotates per request, so the image itself can never be cached.',
+  })
+  @ApiParam({ name: 'publicId', description: 'Short public identifier' })
+  @ApiResponse({ status: 302, ...REDIRECT_RESPONSE })
+  @ApiResponse({ status: 404, ...DELIVERY_NOT_FOUND_RESPONSE })
+  async thumbnail(
+    @Param('publicId') publicId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    redirectTo(
+      res,
+      await this.delivery.resolveThumbnailUrl(publicId),
+      THUMBNAIL_REDIRECT_CACHE_CONTROL,
+    );
+  }
+}
+
+/**
+ * Answers with no body at all. `res.redirect` would append Express's courtesy
+ * HTML page, which is bytes an API whose whole point is to stay out of the data
+ * path has no reason to send.
+ */
+function redirectTo(res: Response, url: string, cacheControl: string): void {
+  res.setHeader('Cache-Control', cacheControl);
+  res.setHeader('Location', url);
+  res.status(HttpStatus.FOUND).end();
 }
