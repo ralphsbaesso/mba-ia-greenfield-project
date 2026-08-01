@@ -14,6 +14,7 @@ import swaggerConfig from './config/swagger.config';
 import { envValidationSchema } from './config/env.validation';
 import { StorageModule } from './storage/storage.module';
 import { VideoQueueModule } from './videos/processing/video-queue.module';
+import { VideoUploadsModule } from './videos/uploads/video-uploads.module';
 import { VideosModule } from './videos/videos.module';
 
 @Module({
@@ -49,6 +50,7 @@ import { VideosModule } from './videos/videos.module';
     AuthModule,
     StorageModule,
     VideoQueueModule,
+    VideoUploadsModule,
     VideosModule,
   ],
   controllers: [AppController],

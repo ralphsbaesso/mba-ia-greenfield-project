@@ -39,6 +39,17 @@ export class TokenExpiredException extends DomainException {
   }
 }
 
+/**
+ * Phase 02 creates the channel at signup with `cascade`, so a `sub` that resolves
+ * to no channel is an invariant violation, not a user-facing input error
+ * (video-authorization-and-metadata/TD-02).
+ */
+export class ChannelMissingForUserException extends DomainException {
+  constructor() {
+    super('CHANNEL_MISSING_FOR_USER', 500, 'Authenticated user has no channel');
+  }
+}
+
 export class TokenReuseDetectedException extends DomainException {
   constructor() {
     super(

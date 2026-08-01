@@ -28,6 +28,20 @@ function isPgUniqueViolationOnColumn(err: unknown, column: string): boolean {
 export class ChannelsService {
   constructor(private readonly dataSource: DataSource) {}
 
+  /**
+   * Ownership of a video is resolved through the owner's channel, so the
+   * `sub` → `channel_id` lookup belongs here rather than in the videos module
+   * (video-authorization-and-metadata/TD-02).
+   */
+  async findIdByUserId(userId: string): Promise<string | null> {
+    const channel = await this.dataSource.getRepository(Channel).findOne({
+      where: { user_id: userId },
+      select: { id: true },
+    });
+
+    return channel?.id ?? null;
+  }
+
   async createChannel(userId: string, email: string): Promise<Channel> {
     const baseNickname = sanitizeNickname(email.split('@')[0]);
 

@@ -1,4 +1,5 @@
 import {
+  CreateMultipartUploadCommand,
   GetObjectCommand,
   type GetObjectCommandOutput,
   HeadObjectCommand,
@@ -58,6 +59,25 @@ export class StorageService {
 
   resolveThumbnailKey(videoId: string): string {
     return `${STORAGE_PREFIXES.THUMBNAIL}/${videoId}.${THUMBNAIL_EXTENSION}`;
+  }
+
+  async createMultipartUpload(
+    key: string,
+    contentType: string,
+  ): Promise<string> {
+    const { UploadId } = await this.client.send(
+      new CreateMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ContentType: contentType,
+      }),
+    );
+
+    if (!UploadId) {
+      throw new Error(`Storage returned no UploadId for key ${key}`);
+    }
+
+    return UploadId;
   }
 
   async putObject(

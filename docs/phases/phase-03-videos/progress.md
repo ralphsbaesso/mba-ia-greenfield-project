@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/17 completed
+**SIs:** 5/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -44,9 +44,14 @@
   - AC de boot verificado à mão: `npm run start:dev` sobe com o Redis disponível (`Nest application successfully started`, `curl localhost:3000` → 200).
 
 ### SI-03.5 — Implementar o initiate do upload multipart (pré-cadastro do rascunho)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 19 passing (13 unit + 6 integration contra Postgres + MinIO reais)
+- **Observations:**
+  - O `id` do vídeo é gerado na aplicação com `randomUUID()`, não pelo banco. É obrigatório: a `storage_key` deriva do `id` (TD-03) e o multipart precisa ser aberto **antes** do INSERT para que o `upload_id` já nasça persistido na linha (TD-05, TD-15). Há um teste que trava essa ordem (`multipart` antes de `save`).
+  - O lookup `sub` → `channel_id` virou `ChannelsService.findIdByUserId()`, e não uma query ao repositório de `channels` dentro do módulo de vídeos — SRP conforme o CLAUDE.md raiz ("extrair imediatamente para o módulo correto"). Método novo em módulo existente.
+  - TTL das URLs de parte fixado em **6h** (`UPLOAD_PART_URL_TTL_SECONDS`). O plano só dizia "ordem de horas, não os 7 dias máximos"; 6h dá ~2.7x de folga sobre a estimativa de 2.2h para 10GB a 10 Mbps. Número escolhido aqui, não no plano.
+  - **Lacuna deixada de propósito para SI-03.16:** se o INSERT da linha falhar depois de `CreateMultipartUpload` ter sucesso, o multipart fica órfão **sem linha** — e a rotina de limpeza de rascunhos de TD-15 encontra órfãos pelo `upload_id` da linha, então esse caso escaparia dela para sempre. Abortar o multipart no catch resolveria, mas `AbortMultipartUpload` pertence a SI-03.16; avaliar lá se vale cobrir este caminho.
+  - Os testes de integração deixam multipart uploads incompletos no bucket de dev (sem o abort ainda implementado). Volume desprezível (partes de poucos bytes), mas some quando SI-03.16 entrar e o teardown puder abortar.
 
 ### SI-03.6 — Implementar o complete do upload e a publicação do job
 - **Status:** pending
