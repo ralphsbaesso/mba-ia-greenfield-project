@@ -9,6 +9,7 @@ import storageConfig from '../../config/storage.config';
 import { StorageModule } from '../../storage/storage.module';
 import { User } from '../../users/entities/user.entity';
 import { Video } from '../entities/video.entity';
+import { OrphanDraftCleanupModule } from '../uploads/orphan-draft-cleanup.module';
 import workerConfig from '../../config/worker.config';
 import { VideosModule } from '../videos.module';
 import { FfprobeService } from './ffprobe.service';
@@ -61,6 +62,7 @@ const WORKER_ENTITIES = [User, Channel, Video];
     VideoQueueModule,
     VideosModule,
     StorageModule,
+    OrphanDraftCleanupModule,
   ],
   providers: [
     SourceFileService,

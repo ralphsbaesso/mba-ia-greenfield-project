@@ -148,6 +148,27 @@ export class VideoUploadsService {
   }
 
   /**
+   * The owner's explicit cancel. Guarded to `draft` because that is the only state
+   * with an open multipart upload — after `complete` the object is consolidated and
+   * there are no parts left to reclaim (phase-03-videos/TD-15, TD-12).
+   */
+  async abortUpload(userId: string, videoId: string): Promise<void> {
+    const video = await this.findOwnedVideo(userId, videoId);
+
+    if (video.status !== VideoStatus.DRAFT || !video.upload_id) {
+      throw new InvalidVideoStateException();
+    }
+
+    await this.storage.abortMultipartUpload(video.storage_key, video.upload_id);
+
+    // The row stays — Fase 04 owns draft management, this phase owns storage
+    // hygiene (TD-15). Clearing `upload_id` is what makes the state honest: the
+    // grant is gone, so a later `complete` answers `409` instead of failing deep
+    // in the storage client, and the cleanup routine will not re-abort it.
+    await this.videos.update({ id: video.id }, { upload_id: null });
+  }
+
+  /**
    * Every miss — malformed id, unknown id, someone else's video — answers the same
    * `VIDEO_NOT_FOUND`, so the route never confirms existence
    * (video-authorization-and-metadata/TD-03).

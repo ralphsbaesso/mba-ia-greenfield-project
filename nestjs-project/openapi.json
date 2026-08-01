@@ -637,6 +637,68 @@
         ]
       }
     },
+    "/videos/{videoId}/uploads": {
+      "delete": {
+        "description": "Aborts the multipart upload, reclaiming the parts already transferred — the costly part of an abandoned upload. The draft row is kept; only the storage grant goes away.",
+        "operationId": "VideoUploadsController_cancel",
+        "parameters": [
+          {
+            "name": "videoId",
+            "required": true,
+            "in": "path",
+            "description": "Internal video id returned by the initiate call",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Upload aborted; the accumulated parts were reclaimed"
+          },
+          "401": {
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VIDEO_NOT_FOUND — unknown video or a caller who does not own it; the two are deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "INVALID_VIDEO_STATE — the video is not a draft, so there is no multipart upload left to abort",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Cancel a video upload",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
     "/videos/me/{videoId}": {
       "get": {
         "description": "The owner status poll. Returns the row in any state, including `error` with its persisted failure reason, which is what makes a failed upload diagnosable by its owner instead of silently absent.",

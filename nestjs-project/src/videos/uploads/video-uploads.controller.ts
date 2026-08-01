@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   HttpCode,
   HttpStatus,
   Param,
@@ -139,5 +140,46 @@ export class VideoUploadsController {
     @Body() dto: CompleteUploadDto,
   ): Promise<CompleteUploadResult> {
     return this.uploads.complete(user.sub, videoId, dto.parts);
+  }
+
+  @Delete(':videoId/uploads')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Cancel a video upload',
+    description:
+      'Aborts the multipart upload, reclaiming the parts already transferred — the costly part of an abandoned upload. The draft row is kept; only the storage grant goes away.',
+  })
+  @ApiParam({
+    name: 'videoId',
+    format: 'uuid',
+    description: 'Internal video id returned by the initiate call',
+  })
+  @ApiResponse({
+    status: 204,
+    description: 'Upload aborted; the accumulated parts were reclaimed',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'VIDEO_NOT_FOUND — unknown video or a caller who does not own it; the two are deliberately indistinguishable',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'INVALID_VIDEO_STATE — the video is not a draft, so there is no multipart upload left to abort',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async cancel(
+    @CurrentUser() user: JwtPayload,
+    @Param('videoId') videoId: string,
+  ): Promise<void> {
+    await this.uploads.abortUpload(user.sub, videoId);
   }
 }

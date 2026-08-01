@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 15/17 completed
+**SIs:** 16/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -181,9 +181,16 @@
   - **Incidente de ambiente (fora do escopo do SI, resolvido):** matei uma execução de suíte completa que estava em background e ela parou dentro do spec de migrations — que desfaz as migrations e só as restaura no `afterAll`. O banco ficou meio-revertido (`users` e `videos` sumidos) e toda suíte com DB quebrou. Recuperado com `typeorm schema:drop` + `migration:run`, com autorização do usuário. Lição prática: **não interromper a suíte completa**, porque o spec de migrations não é resiliente a kill.
 
 ### SI-03.16 — Implementar o cancelamento de upload e a limpeza de rascunhos órfãos
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 13 passing nas duas suites da Tests table (`orphan-draft-cleanup.service.spec.ts` 9 + `.integration-spec.ts` 8, sendo 4 do `it.each`) + 3 no e2e novo (`test/videos-upload-cancel.e2e-spec.ts`, cobrindo os 3 cenários de `specs/videos-upload-cancel.plan.md`) + 56 reexecutados de `src/storage` e `video-uploads.service` + 12 do e2e de uploads
+- **Observations:**
+  - **Bug de ambiente encontrado no MinIO fixado:** `ListMultipartUploads` **com `Prefix` devolve lista vazia**, e sem o parâmetro devolve todos os uploads abertos. Descoberto por sonda direta no SDK depois de 4 testes falharem juntos. `StorageService.listMultipartUploads` passou a filtrar no cliente — comportamento que vale igual em MinIO e S3. Vale lembrar disso em qualquer listagem futura contra essa imagem.
+  - **`abortUpload` zera o `upload_id` depois de abortar.** A política conservadora de TD-15 é sobre **remoção de linha**; a linha continua lá, em `draft`. Zerar a coluna é o que mantém o estado honesto: um `complete` posterior responde `409` em vez de estourar dentro do cliente de storage, e a rotina de limpeza não reaborta o mesmo upload para sempre (`NoSuchUpload` a cada execução). O teste de idempotência entre duas execuções seguidas existe por causa disso.
+  - **Nenhuma dependência nova.** TD-15 Opção A já aponta o scheduler do BullMQ como a infraestrutura da rotina, então `@nestjs/schedule` não entrou — a rotina é um `upsertJobScheduler` (chaveado por id, então cada boot converge para um agendamento em vez de empilhar) numa fila **separada**, `video-maintenance`. Não reusei `video-processing`: o processor dela não despacha por nome de job, e a concorrência 1 existe para limitar disco de scratch de transcodificação.
+  - Produtor e consumidor ficam só no runtime do worker (`### Events/Messages`), em três peças pequenas: `OrphanDraftCleanupService` (a rotina), `...Processor` (consome) e `...Scheduler` (agenda). **Verificado subindo o worker de verdade:** o módulo inicializa e o primeiro job dispara na hora — o log `Running the orphan-draft cleanup` fecha a cadeia agendamento → fila → processor → serviço.
+  - A rotina **loga e segue** quando um abort falha, em vez de propagar: um objeto inalcançável não pode derrubar o lote inteiro. O vídeo que falhou mantém o `upload_id`, então a execução seguinte tenta exatamente ele de novo — o teste unitário cobre esses dois lados.
+  - O e2e sobe uma parte de verdade pela URL presignada antes de cancelar; um multipart vazio não provaria nada sobre o storage acumulado. E prova que o abort é real de duas formas: o `upload_id` some da listagem **e** um `CompleteMultipartUpload` com ele é recusado.
+  - `openapi.json` regenerado: `DELETE /videos/{videoId}/uploads` com `204` sem schema (`204` não carrega body), mais 401/404/409 no envelope compartilhado.
 
 ### SI-03.17 — Expor o reprocessamento guardado
 - **Status:** pending

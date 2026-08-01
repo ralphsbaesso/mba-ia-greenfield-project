@@ -1,7 +1,9 @@
 import {
+  AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   GetObjectCommand,
+  ListMultipartUploadsCommand,
   type GetObjectCommandOutput,
   HeadObjectCommand,
   type HeadObjectCommandOutput,
@@ -23,6 +25,11 @@ export interface PresignGetOptions {
   expiresIn: number;
   responseContentType?: string;
   responseContentDisposition?: string;
+}
+
+export interface PendingUpload {
+  key: string;
+  uploadId: string;
 }
 
 export interface CompletedPart {
@@ -108,6 +115,44 @@ export class StorageService {
         MultipartUpload: { Parts: orderedParts },
       }),
     );
+  }
+
+  /**
+   * The only way to reclaim the parts of an upload that was never completed —
+   * S3 keeps them, and charges for them, until the upload is aborted
+   * (phase-03-videos/TD-15).
+   */
+  async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    await this.client.send(
+      new AbortMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+      }),
+    );
+  }
+
+  /**
+   * The observable side of the abort: what is still open and still costing.
+   *
+   * The prefix is applied here rather than sent as `Prefix`: the pinned MinIO
+   * release answers an empty list to a prefixed `ListMultipartUploads` while
+   * returning every upload when the parameter is omitted. Filtering client-side
+   * is the behaviour that holds on both MinIO and S3. It does not paginate —
+   * one page is enough for the hygiene checks that use it.
+   */
+  async listMultipartUploads(prefix?: string): Promise<PendingUpload[]> {
+    const { Uploads } = await this.client.send(
+      new ListMultipartUploadsCommand({ Bucket: this.bucket }),
+    );
+
+    return (Uploads ?? [])
+      .filter((upload) => upload.Key && upload.UploadId)
+      .map((upload) => ({
+        key: upload.Key as string,
+        uploadId: upload.UploadId as string,
+      }))
+      .filter((upload) => !prefix || upload.key.startsWith(prefix));
   }
 
   async putObject(
