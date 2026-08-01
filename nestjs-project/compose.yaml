@@ -12,6 +12,12 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   db:
     image: postgres:17
@@ -33,4 +39,50 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # Tag pinada de propósito: a publicação community do MinIO parou, então `latest`
+  # não é reprodutível entre `down -v` e `up -d`. Ver nestjs-project/CLAUDE.md.
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=streamtube
+      - MINIO_ROOT_PASSWORD=streamtube
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: cria o bucket privado único da fase. Reusa a imagem pinada do MinIO
+  # (que já embarca o `mc`) para não introduzir uma segunda tag a versionar.
+  minio-init:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mc alias set local http://minio:9000 streamtube streamtube &&
+        mc mb --ignore-existing local/streamtube &&
+        mc anonymous set none local/streamtube
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  minio-data:
 

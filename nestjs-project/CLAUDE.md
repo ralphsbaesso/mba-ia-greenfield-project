@@ -13,6 +13,8 @@ docker compose ps   # all services must show status "running"
 Then verify each infrastructure service is actually ready to accept connections — not just running:
 
 - **PostgreSQL:** `docker compose exec db pg_isready -U streamtube` — expect `accepting connections`
+- **MinIO:** `docker compose exec minio mc ready local` — expect `The cluster is ready`. The bucket is created by the one-shot `minio-init` service; `docker compose ps -a minio-init` must show `exited (0)`.
+- **Redis:** `docker compose exec redis redis-cli ping` — expect `PONG`
 
 Only start the NestJS dev server (`npm run start:dev`) when the user **explicitly** asks to run the application — never as part of "start the environment".
 
@@ -34,6 +36,29 @@ docker compose exec nestjs-api npm run start:dev
 Services:
 - `nestjs-api` — NestJS API, port `3000`
 - `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `mailpit` — SMTP sink, SMTP `1025`, web UI `8025`
+- `minio` — S3-compatible object storage, API `9000`, console `9001`, user/password `streamtube`
+- `minio-init` — one-shot; creates the private bucket `streamtube` and exits
+- `redis` — Redis 7, port `6379`, `maxmemory-policy noeviction` (BullMQ requires it)
+
+### MinIO image pin
+
+`minio` is pinned to `minio/minio:RELEASE.2025-09-07T16-13-09Z` on purpose. Upstream stopped publishing the community image, so `latest` is no longer a stable target — pinning is the only way `docker compose down -v && docker compose up -d` reproduces the same environment. Two consequences are **accepted, not worked around**:
+
+- **The image is frozen.** It will not receive upstream fixes. Bumping the tag is a deliberate decision, not routine maintenance.
+- **The console is reduced.** The web UI at `:9001` no longer offers full object-browsing/administration. Do **not** verify storage behavior through the console — verify through the S3 API instead:
+
+```bash
+# The `local` alias baked into the container is credential-less (it only serves the
+# healthcheck) — set a credentialed alias before any read/write operation.
+docker compose exec minio sh -c 'mc alias set st http://localhost:9000 streamtube streamtube \
+  && mc ls st/streamtube \
+  && mc anonymous get st/streamtube'   # expect: permission is `private`
+
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9000/streamtube/<key>   # expect 403
+```
+
+`minio-init` reuses the same pinned image (it already ships `mc`) so there is only one MinIO tag to keep in sync.
 
 All verification and teardown commands run on the **host machine**:
 
