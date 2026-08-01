@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/17 completed
+**SIs:** 12/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -130,9 +130,19 @@
   - O `VideoProcessingProcessor` só é registrado no `VideoProcessingModule`, que só o worker importa — a API nunca instancia um consumidor, então subir a API não consome fila.
 
 ### SI-03.12 — Implementar o tratamento de falhas do processamento
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 44 passing (22 unit de classificação + handler, 13 unit do caminho feliz reexecutados, 9 integration contra Postgres + MinIO + Redis reais) — rodados no container `video-worker`
+- **Observations:**
+  - A classificação é deliberadamente **assimétrica**: permanente é só o veredito do próprio `ffprobe` (`NoDecodableVideoStreamError`); timeout de probe, falha de storage e binário ausente são todos transitórios. Chutar que uma falha de infra é permanente deixaria um vídeo bom parado para sempre — o custo do erro nas duas direções não é o mesmo.
+  - O fail-fast usa `UnrecoverableError` do próprio BullMQ, não um `return`. Retornar marcaria o job como `completed` enquanto o vídeo está em `error`, e a fila mentiria sobre o que aconteceu.
+  - `isLastAttempt` espelha a condição interna do BullMQ (`attemptsMade + 1 >= opts.attempts`). Verificado na fonte instalada (bullmq 5.81.3): dentro do handler `attemptsMade` conta as tentativas **já finalizadas** (0 na primeira execução) — o incremento do `moveToActive` cai em `attemptsStarted` (`ats`), campo diferente. Ler o campo errado teria declarado exaustão uma tentativa cedo demais.
+  - A gravação de `error` + `failure_reason` também é guardada por `WHERE status = 'processing'`, pelo mesmo motivo da transição para `ready`: a falha de um job que não é mais dono da linha não pode sobrescrevê-la.
+  - Enquanto restam tentativas, **nada é escrito** — a linha fica em `processing` para o retry encontrar um estado que permite re-run limpo. A linha só vira `error` no fail-fast ou na exaustão.
+  - Publicação na DLQ **sem `jobId` determinístico**, ao contrário da fila principal. A DLQ não tem consumidor, então um id reusado descartaria silenciosamente a segunda falha de um vídeo reprocessado (SI-03.17) — aqui retenção vale mais que dedup.
+  - Ordem deliberada na exaustão: grava a linha **antes** de publicar na DLQ (teste explícito com `invocationCallOrder`). A linha é o que o dono lê de volta; a DLQ é retenção. Uma indisponibilidade do Redis não pode custar o estado diagnosticável.
+  - Adicionado `@OnWorkerEvent('error')`: um evento `error` sem listener é o que de fato derruba um processo Node. É o complemento do "capturar, registrar e retornar" para as falhas internas do worker (conexão Redis, lock), que não passam pelo `process()`.
+  - `video-processing.processor.spec.ts` (SI-03.11) foi tocado: o job falso ganhou `attemptsMade`/`opts` reais e o provider da DLQ. Sem isso o teste passava por acidente aritmético (`NaN >= 1` é `false`) em vez de por decisão.
+  - O spec de integração exercita as falhas com arquivos de verdade: `not-a-video.txt` no bucket para o permanente e objeto ausente para o transitório, com `attempts: 2` e backoff de 50ms sobrescritos no `add` — a política sob teste é o que acontece na exaustão, não quanto tempo o backoff real de 5s leva.
 
 ### SI-03.13 — Implementar as leituras de vídeo (pública `ready`-only e do dono)
 - **Status:** pending

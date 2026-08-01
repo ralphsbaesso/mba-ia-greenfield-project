@@ -1,3 +1,4 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Job } from 'bullmq';
@@ -9,6 +10,7 @@ import {
   VideoProcessingJobData,
   VideoProcessingProcessor,
 } from './video-processing.processor';
+import { VIDEO_PROCESSING_DLQ } from './video-queue.constants';
 
 const VIDEO_ID = '44444444-4444-4444-8444-444444444444';
 const STORAGE_KEY = `videos/${VIDEO_ID}.mp4`;
@@ -31,8 +33,15 @@ type UpdateCall = [
   Record<string, unknown>,
 ];
 
+// Shaped like a real job: the failure path reads `attemptsMade` and `opts` to
+// decide between retrying and giving up (SI-03.12).
 const job = (videoId: string = VIDEO_ID): Job<VideoProcessingJobData> =>
-  ({ data: { videoId } }) as Job<VideoProcessingJobData>;
+  ({
+    id: 'job-1',
+    data: { videoId },
+    attemptsMade: 0,
+    opts: { attempts: 3 },
+  }) as Job<VideoProcessingJobData>;
 
 describe('VideoProcessingProcessor', () => {
   let processor: VideoProcessingProcessor;
@@ -90,6 +99,10 @@ describe('VideoProcessingProcessor', () => {
         { provide: SourceFileService, useValue: sourceFiles },
         { provide: FfprobeService, useValue: ffprobe },
         { provide: ThumbnailService, useValue: thumbnails },
+        {
+          provide: getQueueToken(VIDEO_PROCESSING_DLQ),
+          useValue: { add: jest.fn() },
+        },
       ],
     }).compile();
 
