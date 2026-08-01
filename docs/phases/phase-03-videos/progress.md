@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/17 completed
+**SIs:** 10/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -106,9 +106,16 @@
   - O AC "tamanho registrado é o do storage mesmo quando o ffprobe diverge" foi testado pela via estrutural (o probe não carrega tamanho + `sizeOf` lê do objeto) mais um teste com arquivo local divergente no mesmo diretório de scratch, em vez de forjar um arquivo cujo header mente sobre o tamanho.
 
 ### SI-03.10 — Implementar a geração automática de thumbnail
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 15 passing (9 unit da política de seek + 6 integration com `ffmpeg` real e MinIO) — rodados no container `video-worker`
+- **Observations:**
+  - **Desvio consciente da fórmula do plano:** `max(1s, duration * 0.10)` é clampado para nunca passar do fim do arquivo (`min(preferido, duration - 0.1s)`). Sem o clamp, um clipe de menos de 1s buscaria além do EOF, o ffmpeg não decodificaria frame nenhum e o job inteiro falharia por causa de um input legítimo. Para tudo ≥ 1s a fórmula do plano vale sem alteração (vídeo de 5s → 1s, de 100s → 10s), e há teste para os dois lados.
+  - Largura da thumbnail fixada em **640px** (`THUMBNAIL_WIDTH`). O plano fixa a expressão `scale=<W>:-2`, não o valor de `W`; o número foi escolhido aqui. O `-2` é o que preserva o aspect ratio e mantém a altura par — verificado no teste: o fixture 320x240 vira 640x480 exatos.
+  - O AC "exatamente uma imagem JPEG" foi verificado por três vias em vez de listar o bucket (o `StorageService` não expõe `ListObjects`, e essa superfície não pertence a este SI): a chave é derivada do `id` (então só pode existir uma), os magic bytes do objeto são `FF D8 FF`, e o `ffprobe` sobre o objeto baixado reporta `mjpeg` — um único frame.
+  - O AC de sobrescrita é testado plantando um **decoy** na chave exata antes de gerar: se a extração acrescentasse em vez de sobrescrever, o conteúdo velho sobreviveria. Depois roda duas vezes e confere que ambas devolvem a mesma chave.
+  - Mesmo tratamento de `ENOENT` do SI-03.9: binário ausente vira erro comum, não `ThumbnailExtractionError`. Uma imagem de worker quebrada não pode se disfarçar de "vídeo ruim".
+  - O `-ss` vai **antes** do `-i` de propósito (input seeking): o ffmpeg salta no arquivo em vez de decodificar tudo até a marca, o que num vídeo longo é a diferença entre milissegundos e minutos.
+  - O `ThumbnailService` ainda não é chamado por ninguém — quem costura sonda + thumbnail + persistência é o processador de SI-03.11.
 
 ### SI-03.11 — Implementar o processador do job (persistência e transição para `ready`)
 - **Status:** pending

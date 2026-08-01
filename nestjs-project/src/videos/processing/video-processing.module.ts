@@ -13,6 +13,7 @@ import workerConfig from '../../config/worker.config';
 import { VideosModule } from '../videos.module';
 import { FfprobeService } from './ffprobe.service';
 import { SourceFileService } from './source-file.service';
+import { ThumbnailService } from './thumbnail.service';
 import { VideoQueueModule } from './video-queue.module';
 
 /**
@@ -60,7 +61,7 @@ const WORKER_ENTITIES = [User, Channel, Video];
     VideosModule,
     StorageModule,
   ],
-  providers: [SourceFileService, FfprobeService],
-  exports: [SourceFileService, FfprobeService],
+  providers: [SourceFileService, FfprobeService, ThumbnailService],
+  exports: [SourceFileService, FfprobeService, ThumbnailService],
 })
 export class VideoProcessingModule {}
