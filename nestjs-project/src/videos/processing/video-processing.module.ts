@@ -14,6 +14,7 @@ import { VideosModule } from '../videos.module';
 import { FfprobeService } from './ffprobe.service';
 import { SourceFileService } from './source-file.service';
 import { ThumbnailService } from './thumbnail.service';
+import { VideoProcessingProcessor } from './video-processing.processor';
 import { VideoQueueModule } from './video-queue.module';
 
 /**
@@ -61,7 +62,12 @@ const WORKER_ENTITIES = [User, Channel, Video];
     VideosModule,
     StorageModule,
   ],
-  providers: [SourceFileService, FfprobeService, ThumbnailService],
+  providers: [
+    SourceFileService,
+    FfprobeService,
+    ThumbnailService,
+    VideoProcessingProcessor,
+  ],
   exports: [SourceFileService, FfprobeService, ThumbnailService],
 })
 export class VideoProcessingModule {}

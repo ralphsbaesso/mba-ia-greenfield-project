@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/17 completed
+**SIs:** 11/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -118,9 +118,16 @@
   - O `ThumbnailService` ainda não é chamado por ninguém — quem costura sonda + thumbnail + persistência é o processador de SI-03.11.
 
 ### SI-03.11 — Implementar o processador do job (persistência e transição para `ready`)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 22 passing (13 unit com deps mockadas + 9 integration contra Postgres + MinIO + Redis reais) — rodados no container `video-worker`
+- **Observations:**
+  - O `UPDATE` guardado por `WHERE status = 'processing'` **é** a fronteira de escrita única: metadados, `thumbnail_key` e a transição para `ready` saem num único statement. Um `ready` parcial é justamente o estado que quebraria o re-run limpo de um job repetido, e aqui ele é impossível por construção, não por convenção.
+  - A idempotência tem duas camadas verificadas: o `findOne` escopado em `processing` faz uma segunda entrega virar no-op (`updated_at` não se move — teste explícito), e as duas chaves de storage derivam do `id`, então um re-run sobrescreve em vez de duplicar.
+  - Uma linha que não está em `processing` (rascunho, já `ready`, ou inexistente) faz o job **terminar com sucesso**, não falhar. Falhar geraria retry e DLQ para uma situação que é normal — entrega duplicada é esperada em at-least-once.
+  - O teste de integração sobe o **contexto raiz do worker de verdade** (`VideoProcessingModule` + `module.init()`), o que liga o worker BullMQ real; um dos testes publica na fila e espera a linha virar `ready` sem chamar o processor diretamente. Precisou de `init()` explícito: `compile()` sozinho não roda os lifecycle hooks e o worker nunca começaria a consumir. `afterAll` fecha o contexto — verificado que o jest sai limpo, sem reclamação de open handles (AC 5).
+  - Falha em qualquer etapa (probe, thumbnail) **propaga** e não escreve nada na linha. É de propósito: quem traduz a exceção em `status = error` + `failure_reason` e decide retry vs. fail-fast é SI-03.12.
+  - `VIDEO_PROCESSING_CONCURRENCY = 1` (declarada em SI-03.9) passou a ser aplicada de fato, no `@Processor(..., { concurrency })`.
+  - O `VideoProcessingProcessor` só é registrado no `VideoProcessingModule`, que só o worker importa — a API nunca instancia um consumidor, então subir a API não consome fila.
 
 ### SI-03.12 — Implementar o tratamento de falhas do processamento
 - **Status:** pending
