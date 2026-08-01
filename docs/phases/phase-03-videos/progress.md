@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/17 completed
+**SIs:** 6/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -54,9 +54,18 @@
   - Os testes de integração deixam multipart uploads incompletos no bucket de dev (sem o abort ainda implementado). Volume desprezível (partes de poucos bytes), mas some quando SI-03.16 entrar e o teardown puder abortar.
 
 ### SI-03.6 — Implementar o complete do upload e a publicação do job
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 40 passing nos dois arquivos do SI (28 unit + 12 integration contra Postgres + MinIO + Redis reais) — 21 deles novos, 19 são os de SI-03.5 que continuam verdes
+- **Observations:**
+  - A transição é um **update condicional** (`UPDATE ... WHERE id = ? AND status = 'draft'`), não um read-then-write: o `findOne` que carrega a linha serve para resolver dono e chave, mas quem decide a corrida é o `affected` do update. `affected = 0` responde `INVALID_VIDEO_STATE`. É a primeira metade do TD-14 do lado do produtor; a segunda (guard atômico no worker) é SI-03.11.
+  - Ordem fixada por teste: `CompleteMultipartUpload` → `UPDATE` → `queue.add`. O objeto precisa existir antes de a linha avançar (AC 4), e o job só é publicado depois de a linha estar em `processing` — publicar antes deixaria o worker encontrar a linha ainda em `draft` e o guard atômico dele descartaria o job.
+  - **A checagem de dono entrou aqui, não em SI-03.7.** O plano lista a action de owner em SI-03.7, mas o controller não tem acesso a banco — a resolução `sub` → `channel_id` → linha escopada é a única query que existe. `VideoUploadsService.findOwnedVideo()` faz o lookup já escopado por `channel_id` e devolve `VIDEO_NOT_FOUND` para os três casos (id malformado, id desconhecido, vídeo de outro canal). SI-03.7 só precisa expor.
+  - `isVideoId()` (novo em `src/videos/videos.id.ts`) rejeita um `videoId` fora do formato UUID **antes** da query. Sem isso o Postgres levantaria `invalid input syntax for type uuid` (500) onde `### API Contracts → Validation Rules` exige `404 VIDEO_NOT_FOUND` — a regra diz explicitamente que malformado não pode ser distinguido de desconhecido nem virar `400`.
+  - Usuário autenticado sem canal responde `VIDEO_NOT_FOUND` no complete, e não `CHANNEL_MISSING_FOR_USER`: o Error Catalog amarra esse código ao handler do **initiate**. Sem canal não se é dono de nada, e o anti-oráculo manda responder como qualquer outra não-posse.
+  - `StorageService.completeMultipartUpload()` **ordena as partes por `partNumber`** antes de montar o `MultipartUpload.Parts` — o S3 exige ordem ascendente e o cliente manda na ordem em que os PUTs terminaram. Coberto pelo teste de integração, que sobe a parte e completa com a lista vinda do cliente.
+  - **Janela de falha conhecida, não coberta:** se o `queue.add` falhar (Redis fora) depois do update, a linha fica em `processing` sem job — e nada a recupera, porque o reprocess de SI-03.17 só aceita `error`. Não há compensação possível de verdade aqui: voltar para `draft` não ajuda, já que o multipart foi consumido e um segundo complete falharia com `NoSuchUpload`. Avaliar em SI-03.12/SI-03.17 se vale um caminho de recuperação para `processing` órfão.
+  - `upload_id` é **mantido** na linha após o complete (não é limpo). A limpeza de TD-15 filtra por `status = 'draft'`, então um `upload_id` obsoleto numa linha `processing` não é alcançado por ela.
+  - O `describe` externo do integration spec foi renomeado de `VideoUploadsService — initiate (integration)` para `VideoUploadsService (integration)`, para os testes de complete reusarem a mesma fixture (um DataSource e uma conexão Redis por arquivo, em vez de duas).
 
 ### SI-03.7 — Expor os endpoints de upload (initiate e complete)
 - **Status:** pending

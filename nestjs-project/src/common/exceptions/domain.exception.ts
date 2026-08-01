@@ -50,6 +50,28 @@ export class ChannelMissingForUserException extends DomainException {
   }
 }
 
+/**
+ * Also the answer for an owner route reached by a non-owner: a `403` would confirm
+ * the video exists, turning the route into an existence oracle
+ * (video-authorization-and-metadata/TD-03).
+ */
+export class VideoNotFoundException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_FOUND', 404, 'Video not found');
+  }
+}
+
+/** A guarded transition was rejected (phase-03-videos/TD-12, TD-13, TD-14). */
+export class InvalidVideoStateException extends DomainException {
+  constructor() {
+    super(
+      'INVALID_VIDEO_STATE',
+      409,
+      'Video is not in a state that allows this operation',
+    );
+  }
+}
+
 export class TokenReuseDetectedException extends DomainException {
   constructor() {
     super(

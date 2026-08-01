@@ -1,4 +1,5 @@
 import {
+  CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   GetObjectCommand,
   type GetObjectCommandOutput,
@@ -22,6 +23,11 @@ export interface PresignGetOptions {
   expiresIn: number;
   responseContentType?: string;
   responseContentDisposition?: string;
+}
+
+export interface CompletedPart {
+  partNumber: number;
+  etag: string;
 }
 
 export interface PresignUploadPartOptions {
@@ -78,6 +84,30 @@ export class StorageService {
     }
 
     return UploadId;
+  }
+
+  /**
+   * S3 requires the part list in ascending `PartNumber` order; the client sends
+   * whatever order its uploads finished in, so it is sorted here rather than
+   * trusted (phase-03-videos/TD-05).
+   */
+  async completeMultipartUpload(
+    key: string,
+    uploadId: string,
+    parts: CompletedPart[],
+  ): Promise<void> {
+    const orderedParts = [...parts]
+      .sort((a, b) => a.partNumber - b.partNumber)
+      .map((part) => ({ PartNumber: part.partNumber, ETag: part.etag }));
+
+    await this.client.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: { Parts: orderedParts },
+      }),
+    );
   }
 
   async putObject(

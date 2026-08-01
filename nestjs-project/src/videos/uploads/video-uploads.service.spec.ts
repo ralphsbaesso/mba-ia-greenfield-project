@@ -1,9 +1,18 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ChannelsService } from '../../channels/channels.service';
-import { ChannelMissingForUserException } from '../../common/exceptions/domain.exception';
+import {
+  ChannelMissingForUserException,
+  InvalidVideoStateException,
+  VideoNotFoundException,
+} from '../../common/exceptions/domain.exception';
 import { StorageService } from '../../storage/storage.service';
-import { Video } from '../entities/video.entity';
+import { Video, VideoStatus } from '../entities/video.entity';
+import {
+  VIDEO_PROCESSING_JOB,
+  VIDEO_PROCESSING_QUEUE,
+} from '../processing/video-queue.constants';
 import {
   UPLOAD_PART_SIZE_BYTES,
   UPLOAD_PART_URL_TTL_SECONDS,
@@ -56,6 +65,10 @@ describe('VideoUploadsService — initiate', () => {
         { provide: getRepositoryToken(Video), useValue: videos },
         { provide: ChannelsService, useValue: channels },
         { provide: StorageService, useValue: storage },
+        {
+          provide: getQueueToken(VIDEO_PROCESSING_QUEUE),
+          useValue: { add: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -191,6 +204,202 @@ describe('VideoUploadsService — initiate', () => {
       await expect(initiate(1024)).rejects.toBeDefined();
       expect(storage.createMultipartUpload).not.toHaveBeenCalled();
       expect(videos.save).not.toHaveBeenCalled();
+    });
+  });
+});
+
+const VIDEO_ID = '33333333-3333-4333-8333-333333333333';
+const PUBLIC_ID = 'aBcDeFgHiJkL';
+const STORAGE_KEY = `videos/${VIDEO_ID}.mp4`;
+const ETAGS = [
+  { partNumber: 1, etag: '"etag-1"' },
+  { partNumber: 2, etag: '"etag-2"' },
+];
+
+type AddCall = [string, { videoId: string }, { jobId: string }];
+
+describe('VideoUploadsService — complete', () => {
+  let service: VideoUploadsService;
+  let channels: { findIdByUserId: jest.Mock };
+  let storage: { completeMultipartUpload: jest.Mock };
+  let videos: { findOne: jest.Mock; update: jest.Mock };
+  let queue: { add: jest.Mock };
+
+  const draftRow = (overrides: Partial<Video> = {}): Video =>
+    ({
+      id: VIDEO_ID,
+      public_id: PUBLIC_ID,
+      channel_id: CHANNEL_ID,
+      status: VideoStatus.DRAFT,
+      storage_key: STORAGE_KEY,
+      upload_id: UPLOAD_ID,
+      ...overrides,
+    }) as Video;
+
+  beforeEach(async () => {
+    channels = { findIdByUserId: jest.fn().mockResolvedValue(CHANNEL_ID) };
+    storage = {
+      completeMultipartUpload: jest.fn().mockResolvedValue(undefined),
+    };
+    videos = {
+      findOne: jest.fn().mockResolvedValue(draftRow()),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+    queue = { add: jest.fn().mockResolvedValue({ id: VIDEO_ID }) };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        VideoUploadsService,
+        { provide: getRepositoryToken(Video), useValue: videos },
+        { provide: ChannelsService, useValue: channels },
+        { provide: StorageService, useValue: storage },
+        { provide: getQueueToken(VIDEO_PROCESSING_QUEUE), useValue: queue },
+      ],
+    }).compile();
+
+    service = module.get(VideoUploadsService);
+  });
+
+  const complete = (videoId: string = VIDEO_ID) =>
+    service.complete(USER_ID, videoId, ETAGS);
+
+  describe('guarded transition', () => {
+    it('should consolidate the object and answer with the processing status', async () => {
+      const result = await complete();
+
+      expect(storage.completeMultipartUpload).toHaveBeenCalledWith(
+        STORAGE_KEY,
+        UPLOAD_ID,
+        ETAGS,
+      );
+      expect(result).toEqual({
+        publicId: PUBLIC_ID,
+        status: VideoStatus.PROCESSING,
+      });
+    });
+
+    it('should advance the row only from draft, in a conditional update', async () => {
+      await complete();
+
+      expect(videos.update).toHaveBeenCalledWith(
+        { id: VIDEO_ID, status: VideoStatus.DRAFT },
+        { status: VideoStatus.PROCESSING },
+      );
+    });
+
+    it.each([VideoStatus.PROCESSING, VideoStatus.READY, VideoStatus.ERROR])(
+      'should refuse a video in %s with INVALID_VIDEO_STATE',
+      async (status) => {
+        videos.findOne.mockResolvedValue(draftRow({ status }));
+
+        await expect(complete()).rejects.toBeInstanceOf(
+          InvalidVideoStateException,
+        );
+        await expect(complete()).rejects.toMatchObject({
+          errorCode: 'INVALID_VIDEO_STATE',
+          httpStatus: 409,
+        });
+      },
+    );
+
+    it('should neither consolidate nor publish when the state is refused', async () => {
+      videos.findOne.mockResolvedValue(draftRow({ status: VideoStatus.READY }));
+
+      await expect(complete()).rejects.toBeDefined();
+      expect(storage.completeMultipartUpload).not.toHaveBeenCalled();
+      expect(videos.update).not.toHaveBeenCalled();
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    it('should not publish when a concurrent complete already won the transition', async () => {
+      videos.update.mockResolvedValue({ affected: 0 });
+
+      await expect(complete()).rejects.toBeInstanceOf(
+        InvalidVideoStateException,
+      );
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    it('should leave the row untouched when the storage consolidation fails', async () => {
+      storage.completeMultipartUpload.mockRejectedValue(
+        new Error('InvalidPart'),
+      );
+
+      await expect(complete()).rejects.toThrow('InvalidPart');
+      expect(videos.update).not.toHaveBeenCalled();
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('job publication', () => {
+    it('should publish with a jobId derived from the videoId', async () => {
+      await complete();
+
+      expect(queue.add).toHaveBeenCalledTimes(1);
+      const [[name, payload, options]] = queue.add.mock.calls as AddCall[];
+      expect(name).toBe(VIDEO_PROCESSING_JOB);
+      expect(payload).toEqual({ videoId: VIDEO_ID });
+      expect(options.jobId).toBe(VIDEO_ID);
+    });
+
+    it('should carry only the videoId, leaving every other field to the row', async () => {
+      await complete();
+
+      const [[, payload]] = queue.add.mock.calls as AddCall[];
+      expect(Object.keys(payload)).toEqual(['videoId']);
+    });
+
+    it('should publish only after the row is in processing', async () => {
+      const order: string[] = [];
+      videos.update.mockImplementation(() => {
+        order.push('update');
+        return Promise.resolve({ affected: 1 });
+      });
+      queue.add.mockImplementation(() => {
+        order.push('publish');
+        return Promise.resolve({ id: VIDEO_ID });
+      });
+
+      await complete();
+
+      expect(order).toEqual(['update', 'publish']);
+    });
+  });
+
+  describe('ownership', () => {
+    it('should answer VIDEO_NOT_FOUND when no owned video matches', async () => {
+      videos.findOne.mockResolvedValue(null);
+
+      await expect(complete()).rejects.toBeInstanceOf(VideoNotFoundException);
+      await expect(complete()).rejects.toMatchObject({
+        errorCode: 'VIDEO_NOT_FOUND',
+        httpStatus: 404,
+      });
+    });
+
+    it('should scope the lookup to the caller channel instead of filtering after', async () => {
+      await complete();
+
+      expect(videos.findOne).toHaveBeenCalledWith({
+        where: { id: VIDEO_ID, channel_id: CHANNEL_ID },
+      });
+    });
+
+    it('should answer VIDEO_NOT_FOUND, never a 403, for a caller with no channel', async () => {
+      channels.findIdByUserId.mockResolvedValue(null);
+
+      await expect(complete()).rejects.toMatchObject({
+        errorCode: 'VIDEO_NOT_FOUND',
+        httpStatus: 404,
+      });
+      expect(videos.findOne).not.toHaveBeenCalled();
+    });
+
+    it('should answer VIDEO_NOT_FOUND for a malformed videoId, not a validation error', async () => {
+      await expect(complete('not-a-uuid')).rejects.toBeInstanceOf(
+        VideoNotFoundException,
+      );
+      expect(videos.findOne).not.toHaveBeenCalled();
     });
   });
 });
