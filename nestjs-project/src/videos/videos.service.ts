@@ -1,9 +1,18 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
-import { VideoNotFoundException } from '../common/exceptions/domain.exception';
+import {
+  InvalidVideoStateException,
+  VideoNotFoundException,
+} from '../common/exceptions/domain.exception';
 import { Video, VideoStatus } from './entities/video.entity';
+import {
+  VIDEO_PROCESSING_JOB,
+  VIDEO_PROCESSING_QUEUE,
+} from './processing/video-queue.constants';
 import { isVideoId } from './videos.id';
 
 /**
@@ -30,6 +39,11 @@ export interface VideoMetadata {
  */
 export interface PublicVideo extends VideoMetadata {
   publicId: string;
+}
+
+export interface ReprocessResult {
+  publicId: string;
+  status: VideoStatus;
 }
 
 /** The owner's status poll — any state, plus the reason when it failed. */
@@ -71,7 +85,44 @@ export class VideosService {
     @InjectRepository(Video)
     private readonly videos: Repository<Video>,
     private readonly channels: ChannelsService,
+    @InjectQueue(VIDEO_PROCESSING_QUEUE)
+    private readonly queue: Queue,
   ) {}
+
+  /**
+   * The explicit recovery path: a fixed environment republishes the job of a
+   * video that failed, with no new upload. Deliberately **not** an automatic
+   * retry loop — the owner decides when the environment is worth retrying
+   * (phase-03-videos/TD-13).
+   */
+  async reprocess(userId: string, videoId: string): Promise<ReprocessResult> {
+    const video = await this.findOwnedEntity(userId, videoId);
+
+    // Conditional update rather than read-then-write: the `error` guard and the
+    // write are one statement, so two concurrent reprocesses cannot both
+    // republish, and the reason is cleared in the very operation that requeues
+    // (phase-03-videos/TD-12, TD-14).
+    const { affected } = await this.videos.update(
+      { id: video.id, status: VideoStatus.ERROR },
+      { status: VideoStatus.PROCESSING, failure_reason: null },
+    );
+
+    if (!affected) {
+      throw new InvalidVideoStateException();
+    }
+
+    // The previous attempt left a record under the same deterministic id, and
+    // BullMQ ignores an `add` whose jobId already exists — so the spent record
+    // goes first, and the job keeps the id derived from the video (TD-14).
+    await this.queue.remove(video.id);
+    await this.queue.add(
+      VIDEO_PROCESSING_JOB,
+      { videoId: video.id },
+      { jobId: video.id },
+    );
+
+    return { publicId: video.public_id, status: VideoStatus.PROCESSING };
+  }
 
   /**
    * Public resolution. `status = 'ready'` sits in the **same** query that resolves

@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 16/17 completed
+**SIs:** 17/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -193,6 +193,12 @@
   - `openapi.json` regenerado: `DELETE /videos/{videoId}/uploads` com `204` sem schema (`204` não carrega body), mais 401/404/409 no envelope compartilhado.
 
 ### SI-03.17 — Expor o reprocessamento guardado
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 44 passing nas suites da Tests table (`videos.service.spec.ts` com 7 casos novos de reprocess, `videos.service.integration-spec.ts` com 7, mais `videos.module.spec.ts`) + 6 no e2e novo (`test/videos-reprocess.e2e-spec.ts`, cobrindo os 4 cenários de `specs/videos-reprocess.plan.md`) + 14 do e2e de leitura reexecutados
+- **Observations:**
+  - **O achado do SI:** o `jobId` determinístico, que é o que dá a dedup de TD-14, é exatamente o que **impediria** o reprocessamento. O BullMQ ignora silenciosamente um `add` cujo `jobId` já existe — e a tentativa que falhou deixou um registro justamente sob esse id. Sem um `queue.remove(videoId)` antes do `add`, a rota responderia `200` e nada seria republicado. O teste de integração semeia um registro com payload marcado (`{ videoId: 'stale-record' }`) sob o id determinístico: sem o remove, é esse payload que sobreviveria.
+  - O guard de estado está **dentro do `UPDATE`** (`WHERE id = ? AND status = 'error'`), não num read-then-write — mesmo idioma do `complete`. Dois reprocessos concorrentes não republicam os dois, e a limpeza da `failure_reason` acontece na mesmíssima operação que requeue.
+  - Ordem das respostas preservada contra o oráculo: não-dono cai em `findOwnedEntity` e recebe `404` **antes** de qualquer checagem de estado, então um `409` nunca confirma a existência de vídeo alheio.
+  - `VideosService` passou a depender da fila, então `VideosModule` importa `VideoQueueModule` e os dois specs que montam esse módulo ganharam `redisConfig` no `ConfigModule`.
+  - **Como o e2e "deixa o worker consumir":** sobe `VideoProcessingModule` como um **segundo contexto Nest**, dentro dos dois testes que precisam disso e fechado ao final de cada um. Um worker vivo durante a suíte inteira drenaria a fila que os outros testes inspecionam — que é exatamente o que o `CLAUDE.md` do subprojeto adverte. Consequência: **esta suíte precisa rodar no container `video-worker`**, porque transcodifica de verdade (`ffprobe`/`ffmpeg` não existem na imagem da API).
+  - `openapi.json` regenerado: 19 paths, com os 9 endpoints de vídeo da fase.

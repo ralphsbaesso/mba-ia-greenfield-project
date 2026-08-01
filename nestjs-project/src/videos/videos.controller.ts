@@ -1,4 +1,12 @@
-import { Controller, Get, HttpStatus, Param, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Res,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -17,7 +25,11 @@ import {
   VIDEO_REDIRECT_CACHE_CONTROL,
 } from './delivery/video-delivery.constants';
 import { VideoDeliveryService } from './delivery/video-delivery.service';
-import type { OwnerVideo, PublicVideo } from './videos.service';
+import type {
+  OwnerVideo,
+  PublicVideo,
+  ReprocessResult,
+} from './videos.service';
 import { VideosService } from './videos.service';
 
 /** The probe-derived columns, documented once for both read responses. */
@@ -153,6 +165,53 @@ export class VideosController {
   })
   async findPublic(@Param('publicId') publicId: string): Promise<PublicVideo> {
     return this.videos.findPublicByPublicId(publicId);
+  }
+
+  @Post(':videoId/reprocess')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Reprocess a video that failed',
+    description:
+      'Republishes the processing job of a video in `error`, clearing the persisted failure reason in the same operation. Guarded to `error` on purpose: this is a recovery path a fixed environment takes explicitly, not an automatic retry loop.',
+  })
+  @ApiParam({
+    name: 'videoId',
+    format: 'uuid',
+    description: 'Internal video id returned by the initiate call',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The video is queued for processing again',
+    schema: {
+      properties: {
+        publicId: { type: 'string' },
+        status: { type: 'string', example: 'processing' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'VIDEO_NOT_FOUND — unknown video or a caller who does not own it; the two are deliberately indistinguishable',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'INVALID_VIDEO_STATE — the video is not in `error`, so there is nothing to recover',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async reprocess(
+    @CurrentUser() user: JwtPayload,
+    @Param('videoId') videoId: string,
+  ): Promise<ReprocessResult> {
+    return this.videos.reprocess(user.sub, videoId);
   }
 
   @Public()

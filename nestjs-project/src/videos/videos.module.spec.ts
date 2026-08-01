@@ -2,6 +2,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
+import redisConfig from '../config/redis.config';
 import storageConfig from '../config/storage.config';
 import { Channel } from '../channels/entities/channel.entity';
 import { User } from '../users/entities/user.entity';
@@ -18,9 +19,12 @@ describe('VideosModule', () => {
   it('should compile with TypeOrmModule.forFeature([Video]) and provide VideosService', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        // The delivery routes presign through StorageService, which reads the
-        // storage config — hence the global ConfigModule.
-        ConfigModule.forRoot({ isGlobal: true, load: [storageConfig] }),
+        // The delivery routes presign through StorageService and the reprocess
+        // path publishes to BullMQ — both read their config from here.
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [storageConfig, redisConfig],
+        }),
         TypeOrmModule.forRoot({
           ...createTestDataSource(ALL_ENTITIES).options,
           synchronize: false,

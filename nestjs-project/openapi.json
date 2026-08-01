@@ -903,6 +903,83 @@
         ]
       }
     },
+    "/videos/{videoId}/reprocess": {
+      "post": {
+        "description": "Republishes the processing job of a video in `error`, clearing the persisted failure reason in the same operation. Guarded to `error` on purpose: this is a recovery path a fixed environment takes explicitly, not an automatic retry loop.",
+        "operationId": "VideosController_reprocess",
+        "parameters": [
+          {
+            "name": "videoId",
+            "required": true,
+            "in": "path",
+            "description": "Internal video id returned by the initiate call",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The video is queued for processing again",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "publicId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "processing"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VIDEO_NOT_FOUND — unknown video or a caller who does not own it; the two are deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "INVALID_VIDEO_STATE — the video is not in `error`, so there is nothing to recover",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reprocess a video that failed",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
     "/videos/{publicId}/stream": {
       "get": {
         "description": "The API never carries the video bytes: it answers `302` and the player talks to the storage server directly, which is also what gets `Range`/`206` semantics for free instead of hand-rolling partial content.",

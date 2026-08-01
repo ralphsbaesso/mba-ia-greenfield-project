@@ -1,11 +1,20 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ChannelsService } from '../channels/channels.service';
-import { VideoNotFoundException } from '../common/exceptions/domain.exception';
+import {
+  InvalidVideoStateException,
+  VideoNotFoundException,
+} from '../common/exceptions/domain.exception';
 import { Video, VideoStatus } from './entities/video.entity';
+import {
+  VIDEO_PROCESSING_JOB,
+  VIDEO_PROCESSING_QUEUE,
+} from './processing/video-queue.constants';
 import { VideosService } from './videos.service';
 
 type FindOneCall = [{ where: Record<string, unknown> }];
+type UpdateCall = [Record<string, unknown>, Record<string, unknown>];
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CHANNEL_ID = '22222222-2222-4222-8222-222222222222';
@@ -45,18 +54,24 @@ const row = (overrides: Partial<Video> = {}): Video =>
 
 describe('VideosService', () => {
   let service: VideosService;
-  let videos: { findOne: jest.Mock };
+  let videos: { findOne: jest.Mock; update: jest.Mock };
   let channels: { findIdByUserId: jest.Mock };
+  let queue: { add: jest.Mock; remove: jest.Mock };
 
   beforeEach(async () => {
-    videos = { findOne: jest.fn().mockResolvedValue(row()) };
+    videos = {
+      findOne: jest.fn().mockResolvedValue(row()),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     channels = { findIdByUserId: jest.fn().mockResolvedValue(CHANNEL_ID) };
+    queue = { add: jest.fn(), remove: jest.fn() };
 
     const module = await Test.createTestingModule({
       providers: [
         VideosService,
         { provide: getRepositoryToken(Video), useValue: videos },
         { provide: ChannelsService, useValue: channels },
+        { provide: getQueueToken(VIDEO_PROCESSING_QUEUE), useValue: queue },
       ],
     }).compile();
 
@@ -224,6 +239,90 @@ describe('VideosService', () => {
 
       expect(entity.id).toBe(VIDEO_ID);
       expect(entity.storage_key).toBe(`videos/${VIDEO_ID}.mp4`);
+    });
+  });
+
+  describe('the reprocess', () => {
+    const failed = row({
+      status: VideoStatus.ERROR,
+      failure_reason: 'Input has no decodable video stream',
+    });
+
+    beforeEach(() => {
+      videos.findOne.mockResolvedValue(failed);
+    });
+
+    it('should put the error guard inside the write itself', async () => {
+      await service.reprocess(USER_ID, VIDEO_ID);
+
+      const [[criteria, changes]] = videos.update.mock.calls as UpdateCall[];
+      // Read-then-write would leave a window for a second reprocess to slip in.
+      expect(criteria).toEqual({ id: VIDEO_ID, status: VideoStatus.ERROR });
+      expect(changes).toEqual({
+        status: VideoStatus.PROCESSING,
+        failure_reason: null,
+      });
+    });
+
+    it('should clear the failure reason in the same operation that requeues', async () => {
+      await service.reprocess(USER_ID, VIDEO_ID);
+
+      const [[, changes]] = videos.update.mock.calls as UpdateCall[];
+      expect(changes.failure_reason).toBeNull();
+      expect(queue.add).toHaveBeenCalled();
+    });
+
+    it('should republish under the jobId derived from the video', async () => {
+      await service.reprocess(USER_ID, VIDEO_ID);
+
+      expect(queue.add).toHaveBeenCalledWith(
+        VIDEO_PROCESSING_JOB,
+        { videoId: VIDEO_ID },
+        { jobId: VIDEO_ID },
+      );
+    });
+
+    it('should drop the spent record before republishing under the same id', async () => {
+      await service.reprocess(USER_ID, VIDEO_ID);
+
+      // BullMQ ignores an `add` whose jobId already exists, and the failed
+      // attempt left exactly that id behind — without the remove, the requeue
+      // would silently do nothing.
+      expect(queue.remove).toHaveBeenCalledWith(VIDEO_ID);
+      expect(queue.remove.mock.invocationCallOrder[0]).toBeLessThan(
+        queue.add.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('should answer with the public identifier and the new state', async () => {
+      const result = await service.reprocess(USER_ID, VIDEO_ID);
+
+      expect(result).toEqual({
+        publicId: PUBLIC_ID,
+        status: VideoStatus.PROCESSING,
+      });
+    });
+
+    it('should refuse a video that is not in error, publishing nothing', async () => {
+      // The conditional update matched no row: the state moved under us.
+      videos.update.mockResolvedValue({ affected: 0 });
+
+      await expect(service.reprocess(USER_ID, VIDEO_ID)).rejects.toThrow(
+        InvalidVideoStateException,
+      );
+      expect(queue.add).not.toHaveBeenCalled();
+      expect(queue.remove).not.toHaveBeenCalled();
+    });
+
+    it('should answer a non-owner with not-found, never a conflict', async () => {
+      videos.findOne.mockResolvedValue(null);
+
+      await expect(service.reprocess(USER_ID, VIDEO_ID)).rejects.toThrow(
+        VideoNotFoundException,
+      );
+      // A 409 here would confirm the video exists.
+      expect(videos.update).not.toHaveBeenCalled();
+      expect(queue.add).not.toHaveBeenCalled();
     });
   });
 });
