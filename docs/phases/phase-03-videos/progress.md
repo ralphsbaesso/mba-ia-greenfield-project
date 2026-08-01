@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/17 completed
+**SIs:** 2/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -13,9 +13,14 @@
   - Preflight: a árvore de trabalho tem dois arquivos untracked na raiz do repo (`PASSO-A-PASSO-FASE-03.md`, `step1.txt`), fora de `nestjs-project/`. Não foram tocados por este SI.
 
 ### SI-03.2 — Configurar o cliente de object storage e o layout de chaves
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16 passing (7 unit + 8 integration + 1 module compilation)
+- **Observations:**
+  - `@aws-sdk/client-s3` e `@aws-sdk/s3-request-presigner` instalados em `3.1101.0`; o `library-refs.md` pesquisou `3.1097.0`. Mesmo range `^3` pedido pelo plano, sem mudança de superfície de API entre as duas.
+  - `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` / `STORAGE_BUCKET` entraram no Joi como `required()` (espelhando o padrão `DB_USERNAME`/`DB_PASSWORD`/`DB_NAME`); `STORAGE_ENDPOINT` e `STORAGE_REGION` têm default. Isso obrigou a estender o fixture `requiredEnv` em `src/config/env.validation.integration-spec.ts` — arquivo de teste existente, fora da Tests table deste SI, mas a alteração é consequência direta da action 1 ("estender o schema Joi"). Suite continua verde (4/4).
+  - O `StorageService` expõe `putObject` / `headObject` / `getObject` além das 5 technical actions, porque a própria Tests row de integração deste SI exige "put/head/get de um objeto". Os comandos de multipart (`CreateMultipartUpload`, `CompleteMultipartUpload`, `AbortMultipartUpload`) foram deliberadamente deixados para SI-03.5 / SI-03.6 / SI-03.16.
+  - Content type não suportado no `resolveVideoKey` lança um `Error` simples, não uma `DomainException`: o Error Catalog da fase não tem código para isso e a Validation Rule trata como `400` de validação — quem devolve o 400 é o DTO do initiate, via a allow-list exportada `SUPPORTED_VIDEO_CONTENT_TYPES` em `src/storage/storage.constants.ts`. Chegar no serviço com um tipo inválido é violação de invariante.
+  - Fora de escopo (não tocado): `nestjs-project/.env.example` não lista `APP_URL` nem `SWAGGER_ENABLED`, apesar de o schema Joi conhecer ambos.
 
 ### SI-03.3 — Criar a entidade `Video` e sua migration
 - **Status:** pending

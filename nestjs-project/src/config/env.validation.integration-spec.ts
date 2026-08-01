@@ -12,6 +12,9 @@ const requiredEnv = {
   DB_NAME: 'db',
   JWT_SECRET: 'secret',
   JWT_REFRESH_SECRET: 'refresh-secret',
+  STORAGE_ACCESS_KEY: 'storage-key',
+  STORAGE_SECRET_KEY: 'storage-secret',
+  STORAGE_BUCKET: 'bucket',
 };
 
 const validate = (

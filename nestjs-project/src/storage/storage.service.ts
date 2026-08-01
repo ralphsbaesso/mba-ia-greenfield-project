@@ -1,0 +1,146 @@
+import {
+  GetObjectCommand,
+  type GetObjectCommandOutput,
+  HeadObjectCommand,
+  type HeadObjectCommandOutput,
+  PutObjectCommand,
+  S3Client,
+  UploadPartCommand,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Inject, Injectable } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
+import storageConfig from '../config/storage.config';
+import {
+  STORAGE_PREFIXES,
+  THUMBNAIL_EXTENSION,
+  VIDEO_CONTENT_TYPE_EXTENSIONS,
+} from './storage.constants';
+
+export interface PresignGetOptions {
+  expiresIn: number;
+  responseContentType?: string;
+  responseContentDisposition?: string;
+}
+
+export interface PresignUploadPartOptions {
+  uploadId: string;
+  partNumber: number;
+  expiresIn: number;
+}
+
+@Injectable()
+export class StorageService {
+  private readonly client: S3Client;
+  readonly bucket: string;
+
+  constructor(
+    @Inject(storageConfig.KEY) storage: ConfigType<typeof storageConfig>,
+  ) {
+    this.bucket = storage.bucket;
+    // `endpoint` + `forcePathStyle` are what make MinIO-in-dev and S3-in-prod a
+    // configuration difference instead of a code difference (phase-03-videos/TD-01).
+    this.client = new S3Client({
+      endpoint: storage.endpoint,
+      region: storage.region,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: storage.accessKey,
+        secretAccessKey: storage.secretKey,
+      },
+    });
+  }
+
+  resolveVideoKey(videoId: string, declaredContentType: string): string {
+    const extension = this.resolveVideoExtension(declaredContentType);
+    return `${STORAGE_PREFIXES.VIDEO}/${videoId}.${extension}`;
+  }
+
+  resolveThumbnailKey(videoId: string): string {
+    return `${STORAGE_PREFIXES.THUMBNAIL}/${videoId}.${THUMBNAIL_EXTENSION}`;
+  }
+
+  async putObject(
+    key: string,
+    body: Buffer | Uint8Array | string,
+    contentType: string,
+  ): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+      }),
+    );
+  }
+
+  async headObject(key: string): Promise<HeadObjectCommandOutput> {
+    return this.client.send(
+      new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+  }
+
+  async getObject(key: string): Promise<GetObjectCommandOutput> {
+    return this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+  }
+
+  /**
+   * `expiresIn` is required rather than defaulted: delivery wants minutes and the
+   * multipart upload wants hours, so each caller states its own TTL
+   * (phase-03-videos/TD-01, phase-03-videos/TD-05).
+   */
+  async presignGetObject(
+    key: string,
+    options: PresignGetOptions,
+  ): Promise<string> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ResponseContentType: options.responseContentType,
+      ResponseContentDisposition: options.responseContentDisposition,
+    });
+
+    return getSignedUrl(this.client, command, {
+      expiresIn: options.expiresIn,
+    });
+  }
+
+  async presignUploadPart(
+    key: string,
+    options: PresignUploadPartOptions,
+  ): Promise<string> {
+    const command = new UploadPartCommand({
+      Bucket: this.bucket,
+      Key: key,
+      UploadId: options.uploadId,
+      PartNumber: options.partNumber,
+    });
+
+    return getSignedUrl(this.client, command, {
+      expiresIn: options.expiresIn,
+    });
+  }
+
+  private resolveVideoExtension(declaredContentType: string): string {
+    // Parameters (`video/mp4; codecs=…`) are stripped before lookup.
+    const mediaType = (declaredContentType ?? '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+    const extension = VIDEO_CONTENT_TYPE_EXTENSIONS[mediaType];
+
+    if (!extension) {
+      // The initiate DTO validates against the same allow-list, so reaching this
+      // means an invariant was bypassed — there is deliberately no fallback
+      // extension (phase-03-videos/TD-03).
+      throw new Error(
+        `Unsupported video content type: ${declaredContentType || '(empty)'}`,
+      );
+    }
+
+    return extension;
+  }
+}
