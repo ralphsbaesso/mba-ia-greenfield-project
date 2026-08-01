@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/17 completed
+**SIs:** 3/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -23,9 +23,15 @@
   - Fora de escopo (não tocado): `nestjs-project/.env.example` não lista `APP_URL` nem `SWAGGER_ENABLED`, apesar de o schema Joi conhecer ambos.
 
 ### SI-03.3 — Criar a entidade `Video` e sua migration
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 26 passing (5 unit `public_id` + 18 integration da entidade + 1 module compilation + 2 do spec de migrations, atualizado)
+- **Observations:**
+  - As duas `CHECK` state-scoped foram declaradas com o decorator `@Check()` na entidade, e não escritas à mão na migration — assim o `migration:generate` as emite sozinho e entidade e schema não podem divergir. A migration foi gerada pelo CLI (regra `typeorm-migrations.md`), só formatada com Prettier depois.
+  - `public_id` = `randomBytes(9).toString('base64url')` → 12 chars fixos, 72 bits de entropia, sem padding e URL-safe. `crypto` nativo, sem `nanoid` (TD-10).
+  - `numeric(10,3)` e `bigint` voltam do Postgres como **string**. As colunas `duration_seconds`, `bitrate_bps` e `size_bytes` receberam um transformer que devolve `number` na leitura — o tipo da coluna continua exato no banco, e worker/payloads recebem número. Seguro nesta faixa: o teto de 10GB (≈1.07e10) fica muito abaixo de `Number.MAX_SAFE_INTEGER`. O plano não decidia isso.
+  - `created_at`/`updated_at` são `timestamptz` conforme o Data Model. As tabelas da fase 01/02 usam `TIMESTAMP` sem timezone (os `@CreateDateColumn()` de lá não declaram tipo) — divergência preexistente, não tocada.
+  - Três arquivos existentes precisaram acompanhar, todos por consequência direta da nova tabela/FK: `src/database/migrations.integration-spec.ts` (registra a 3ª migration, a tabela `videos` e o novo enum type — sem isso o `DROP TABLE channels CASCADE` do `beforeAll` derrubaria a FK de `videos` e deixaria o banco compartilhado quebrado para as suítes seguintes); `src/test/create-test-data-source.ts` (`cleanAllTables` apaga `videos` antes de `channels`); e `src/channels/entities/channel.entity.ts` (lado `@OneToMany` da relação).
+  - O segundo teste de `migrations.integration-spec.ts` mudou de alvo: a última migration agora é `CreateVideos`, então ele passou a asseverar a remoção de `videos` em vez das tabelas de token. Mesma intenção ("reverter a última migration remove as tabelas dela"), alvo novo.
 
 ### SI-03.4 — Configurar a fila `video-processing` (BullMQ + Redis)
 - **Status:** pending
