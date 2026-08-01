@@ -26,4 +26,8 @@ export const envValidationSchema = Joi.object({
   STORAGE_ACCESS_KEY: Joi.string().required(),
   STORAGE_SECRET_KEY: Joi.string().required(),
   STORAGE_BUCKET: Joi.string().required(),
+  // Required rather than defaulted: a queue that silently points at the wrong
+  // Redis is worse than a startup that refuses to boot.
+  REDIS_HOST: Joi.string().required(),
+  REDIS_PORT: Joi.number().port().required(),
 });

@@ -8,10 +8,12 @@ import appConfig from './config/app.config';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
 import mailConfig from './config/mail.config';
+import redisConfig from './config/redis.config';
 import storageConfig from './config/storage.config';
 import swaggerConfig from './config/swagger.config';
 import { envValidationSchema } from './config/env.validation';
 import { StorageModule } from './storage/storage.module';
+import { VideoQueueModule } from './videos/processing/video-queue.module';
 import { VideosModule } from './videos/videos.module';
 
 @Module({
@@ -23,6 +25,7 @@ import { VideosModule } from './videos/videos.module';
         authConfig,
         databaseConfig,
         mailConfig,
+        redisConfig,
         storageConfig,
         swaggerConfig,
       ],
@@ -45,6 +48,7 @@ import { VideosModule } from './videos/videos.module';
     }),
     AuthModule,
     StorageModule,
+    VideoQueueModule,
     VideosModule,
   ],
   controllers: [AppController],

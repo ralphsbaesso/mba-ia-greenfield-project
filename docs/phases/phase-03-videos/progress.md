@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/17 completed
+**SIs:** 4/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -34,9 +34,14 @@
   - O segundo teste de `migrations.integration-spec.ts` mudou de alvo: a última migration agora é `CreateVideos`, então ele passou a asseverar a remoção de `videos` em vez das tabelas de token. Mesma intenção ("reverter a última migration remove as tabelas dela"), alvo novo.
 
 ### SI-03.4 — Configurar a fila `video-processing` (BullMQ + Redis)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 9 passing (1 module compilation + 4 integration contra Redis real + 4 do spec de env validation, atualizado)
+- **Observations:**
+  - `bullmq@5.81.3` e `@nestjs/bullmq@11.0.4` — batem com o que o `library-refs.md` pesquisou (5.81.2 / 11.0.4).
+  - `BullModule.forRootAsync` (root, com `defaultJobOptions`) e os dois `registerQueue` moram juntos no `VideoQueueModule`, que exporta `BullModule`. Isso deixa o worker de SI-03.8 importar um módulo só, em vez de repetir o root em dois entrypoints.
+  - `REDIS_HOST` e `REDIS_PORT` entraram no Joi como `required()` — é o que satisfaz o AC "falha o startup de forma explícita quando as variáveis de conexão estão ausentes". Verificado: sem elas o schema devolve `"REDIS_HOST" is required. "REDIS_PORT" is required`. Exigiu estender de novo o fixture `requiredEnv` de `src/config/env.validation.integration-spec.ts`.
+  - A dedup por `jobId` determinístico (TD-14) já foi coberta por teste aqui, embora o produtor só chegue em SI-03.6 — o comportamento é da fila, não do produtor. **Atenção para SI-03.11/03.12:** o `library-refs.md` avisa que `removeOnComplete`/`removeOnFailed` quebram essa dedup; nenhuma das duas está habilitada no `defaultJobOptions` atual, e habilitar exige a segunda camada do TD-14 (update condicional atômico no banco).
+  - AC de boot verificado à mão: `npm run start:dev` sobe com o Redis disponível (`Nest application successfully started`, `curl localhost:3000` → 200).
 
 ### SI-03.5 — Implementar o initiate do upload multipart (pré-cadastro do rascunho)
 - **Status:** pending

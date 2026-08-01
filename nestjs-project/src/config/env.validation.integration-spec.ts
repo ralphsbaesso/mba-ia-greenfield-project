@@ -15,6 +15,8 @@ const requiredEnv = {
   STORAGE_ACCESS_KEY: 'storage-key',
   STORAGE_SECRET_KEY: 'storage-secret',
   STORAGE_BUCKET: 'bucket',
+  REDIS_HOST: 'redis',
+  REDIS_PORT: '6379',
 };
 
 const validate = (
