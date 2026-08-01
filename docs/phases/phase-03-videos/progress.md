@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/17 completed
+**SIs:** 7/17 completed
 
 ### SI-03.1 — Provisionar MinIO e Redis no Docker Compose
 - **Status:** completed
@@ -68,9 +68,16 @@
   - O `describe` externo do integration spec foi renomeado de `VideoUploadsService — initiate (integration)` para `VideoUploadsService (integration)`, para os testes de complete reusarem a mesma fixture (um DataSource e uma conexão Redis por arquivo, em vez de duas).
 
 ### SI-03.7 — Expor os endpoints de upload (initiate e complete)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12 passing em `test/videos-uploads.e2e-spec.ts` (5 do initiate + 4 do complete + 3 do contrato OpenAPI), cobrindo os 6 cenários do `specs/videos-uploads.plan.md`
+- **Observations:**
+  - O campo do corpo do initiate ficou **`sizeBytes`**, não `totalSizeBytes`: é o nome literal que o test spec usa (`{ contentType: 'video/mp4', sizeBytes: ... }`), e o `### API Contracts` só descreve o campo em prosa ("total size in bytes"). O controller mapeia `sizeBytes` → `totalSizeBytes` na chamada do serviço; o nome interno não mudou.
+  - A allow-list de content type do DTO é a própria `SUPPORTED_VIDEO_CONTENT_TYPES` de `storage.constants.ts` (`@IsIn`), que deriva do mapa de extensões. Um tipo fora dela devolve `400` no DTO e nunca alcança o `resolveVideoKey`, que trataria isso como violação de invariante.
+  - Nenhum guard novo, nenhuma metadata nova: o guard global da fase 02 cobre os dois endpoints e nada foi marcado `@Public()`. A checagem de dono já tinha entrado no serviço em SI-03.6 — aqui ela só é exposta, e o teste confirma que a resposta ao não-dono é **idêntica byte a byte** à de um `videoId` inexistente (`expect(nonOwner.body).toEqual(unknown.body)`).
+  - **Desvio do test spec (cenário 1.1):** o expect "nenhum multipart upload aberto no bucket" não foi implementado. Exigiria expor `ListMultipartUploads` no `StorageService` (superfície que pertence a SI-03.16) e, pior, seria uma asserção sem sentido em bucket compartilhado — as suítes de SI-03.5/03.6 deixam multiparts órfãos ali. O que garante o mesmo é a asserção de que nenhuma linha nasce: initiate abre o multipart e grava a linha na mesma operação, então "sem linha" implica "sem multipart deste teste".
+  - **Desvio do test spec (cenário 1.2):** o expect "o `id` interno não aparece em nenhum outro campo do payload além de `videoId`" foi implementado como asserção exata do conjunto de chaves do corpo. A leitura literal é impossível de satisfazer: as URLs presignadas **contêm** a chave do objeto, que por TD-03 deriva do `id`. Não é vazamento — o dono já recebe o `videoId` no mesmo payload —, mas a asserção literal falharia sempre.
+  - **Achado pré-existente, fora de escopo:** o `openapi.json` exportado traz `properties: {}` para **todo** DTO de request — `InitiateUploadDto` e `CompleteUploadDto`, mas também `RegisterDto` e `LoginDto` da fase 02. O plugin CLI do `@nestjs/swagger` é um transformer de `tsc`, e tanto `openapi:export` (ts-node) quanto os testes (ts-jest) rodam sem ele; só `nest build` o aplica. O contrato que o frontend consome está, hoje, sem os schemas de corpo de requisição em todos os endpoints. A asserção do e2e verifica o que é verdade (o `requestBody` existe e referencia o schema do DTO) em vez de afirmar propriedades que o documento não tem. Correção pertence a uma task própria (gerar o `metadata.ts` de verdade com o `PluginMetadataGenerator`, ou exportar a partir do `dist/`).
+  - `openapi.json` foi regenerado (`npm run openapi:export`) e agora descreve os dois endpoints: respostas tipadas por status (`201/400/401/500` e `200/400/401/404/409`), todas as de erro apontando para `ApiErrorEnvelope`, e `videoId` documentado como path param `uuid`.
 
 ### SI-03.8 — Provisionar a imagem e o entrypoint do worker
 - **Status:** pending
