@@ -7,7 +7,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -81,7 +88,16 @@
       "get": {
         "description": "Validates the confirmation token and marks the user's email as confirmed.",
         "operationId": "AuthController_confirmEmail",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "Email confirmed successfully"
@@ -1159,35 +1175,159 @@
     "schemas": {
       "RegisterDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
       },
       "ResendConfirmationDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
+        ]
       },
       "LoginDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
       },
       "RefreshTokenDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "refresh_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ]
       },
       "ForgotPasswordDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
+        ]
       },
       "ResetPasswordDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "new_password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
+        ]
       },
       "InitiateUploadDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the video. Required here so the draft is never a nameless row: the\npre-registration that initiate performs already carries what the video is.",
+            "maxLength": 200
+          },
+          "contentType": {
+            "type": "string",
+            "description": "Declared MIME type of the video. The stored object's extension is derived\nfrom it, never from a client-supplied filename.",
+            "enum": [
+              "video/mp4",
+              "video/quicktime",
+              "video/x-matroska",
+              "video/webm",
+              "video/x-msvideo",
+              "video/mpeg",
+              "video/x-ms-wmv",
+              "video/3gpp",
+              "video/x-flv",
+              "video/ogg"
+            ]
+          },
+          "sizeBytes": {
+            "type": "number",
+            "description": "Total size of the file in bytes. The number of presigned parts is computed\nfrom it against the 64 MiB part size.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "title",
+          "contentType",
+          "sizeBytes"
+        ]
+      },
+      "UploadedPartDto": {
+        "type": "object",
+        "properties": {
+          "partNumber": {
+            "type": "number",
+            "description": "1-based index of the part, as presigned at initiate.",
+            "minimum": 1
+          },
+          "etag": {
+            "type": "string",
+            "description": "ETag returned by storage in the response to that part's PUT."
+          }
+        },
+        "required": [
+          "partNumber",
+          "etag"
+        ]
       },
       "CompleteUploadDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "parts": {
+            "description": "One entry per uploaded part. The API cannot close the multipart upload\nwithout the full ETag list.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UploadedPartDto"
+            }
+          }
+        },
+        "required": [
+          "parts"
+        ]
       },
       "ApiErrorEnvelope": {
         "type": "object",

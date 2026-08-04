@@ -262,10 +262,23 @@ Todos em `nestjs-api`, exit 0:
 | `npm run test:integration` | 22 suítes, 191 testes |
 | `npm run test:e2e` | 8 suítes, 99 testes |
 
-### Pendência conhecida, fora do escopo desta fase
+### Schemas de DTO vazios no `openapi.json` — corrigido
 
-`openapi.json` sai com `components.schemas.*Dto` vazios (`{"type":"object","properties":{}}`).
-O plugin `@nestjs/swagger` está configurado no `nest-cli.json`, mas `npm run openapi:export`
-roda por `ts-node` e não passa pelo build da CLI, então a inferência de DTO nunca acontece.
-É sistêmico e anterior a esta fase — atinge igualmente os DTOs de `auth` da Fase 02. Os
-`paths` e os schemas de resposta escritos à mão nos `@ApiResponse` estão corretos.
+Todos os `components.schemas.*Dto` saíam como `{"type":"object","properties":{}}`. Sistêmico
+e anterior a esta fase: atingia igualmente os DTOs de `auth` da Fase 02, e passava
+despercebido porque os `paths` e os schemas de resposta escritos à mão nos `@ApiResponse`
+estavam corretos — o spec parecia completo, só que sem nenhum corpo de requisição.
+
+**Causa:** o CLI plugin do `@nestjs/swagger` é um transformer de AST do TypeScript — injeta
+um `_OPENAPI_METADATA_FACTORY` em cada DTO em tempo de compilação, e é ele que converte os
+decoradores de `class-validator` em schema. O script era
+`ts-node -r tsconfig-paths/register src/openapi-export.ts`, que não passa pelo build da CLI
+e portanto nunca aplica o transformer. A configuração no `nest-cli.json` sempre esteve
+correta; quem não a executava era o script.
+
+**Correção:** `openapi:export` passou a ser `nest build && node dist/openapi-export.js`.
+Resultado: 0 schemas vazios em 10, com `required`, `enum`, `maxLength`, `minItems` e
+`format` derivados dos decoradores, e as descrições vindas do `introspectComments`.
+
+Vale para `ts-jest` também: um documento construído dentro de um teste não tem schema de
+DTO. Contratos de corpo de requisição se conferem contra o `openapi.json` commitado.

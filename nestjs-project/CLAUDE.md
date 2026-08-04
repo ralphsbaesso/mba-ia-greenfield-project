@@ -205,6 +205,8 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 The authoritative contract is `openapi.json`, regenerated with `npm run openapi:export`.
 
+That script is `nest build && node dist/openapi-export.js`, and the build step is **not** optional. The `@nestjs/swagger` CLI plugin configured in `nest-cli.json` is a TypeScript AST transformer: it injects an `_OPENAPI_METADATA_FACTORY` into each DTO at compile time, which is what turns the `class-validator` decorators into request-body schemas. Running the exporter through `ts-node` skips the transformer entirely and emits `"SomeDto": {"type":"object","properties":{}}` for every DTO — a spec that looks complete because the `paths` are all there, while every request body is empty. The same applies to `ts-jest`, so a document built inside a test has no DTO schemas either; assert request-body shapes against the committed `openapi.json`, not against a runtime-built document.
+
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `POST` | `/videos/uploads` | owner | Initiate: creates the `draft` row (with its `title`), opens the multipart upload, returns one presigned URL per part |
