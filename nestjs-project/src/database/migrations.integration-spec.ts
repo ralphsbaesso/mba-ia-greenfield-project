@@ -35,12 +35,12 @@ describe('Database migrations (integration)', () => {
 
     await dataSource.initialize();
 
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
+    // Sequential, not `Promise.all`: a `CASCADE` drop takes locks on the dropped
+    // table *and* on everything referencing it, so concurrent drops of tables that
+    // are FK-related acquire those locks in different orders and deadlock.
+    for (const table of [...MANAGED_TABLES, 'migrations']) {
+      await dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`);
+    }
 
     // DROP TABLE leaves enum types behind and Postgres has no CREATE TYPE IF NOT
     // EXISTS, so re-running the migrations against an already-migrated database
