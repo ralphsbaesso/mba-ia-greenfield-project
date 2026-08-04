@@ -1,6 +1,10 @@
 FROM node:25.6.0-slim
 
-RUN apt update && apt install -y procps curl
+# `ffmpeg` (que traz também o `ffprobe`) entra na imagem de desenvolvimento para que a
+# suíte inteira feche verde num único container — as suítes de `src/videos/processing/`
+# invocam os binários. A imagem de runtime da API segue sem eles (phase-03-videos/TD-07):
+# em produção quem processa vídeo é o worker.
+RUN apt update && apt install -y procps curl ffmpeg
 
 WORKDIR /home/node/app
 

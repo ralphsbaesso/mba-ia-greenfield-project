@@ -1,7 +1,8 @@
 FROM node:25.6.0-slim
 
-# Debian's ffmpeg package ships both `ffmpeg` and `ffprobe`, which keeps the
-# binaries out of `npm install` and out of the API image (phase-03-videos/TD-07).
+# Debian's ffmpeg package ships both `ffmpeg` and `ffprobe`, which keeps the binaries out
+# of `npm install` (phase-03-videos/TD-07). `Dockerfile.dev` installs them too, so the test
+# suite runs in one container; keeping them out of the API belongs to the runtime image.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg procps \
   && rm -rf /var/lib/apt/lists/*
