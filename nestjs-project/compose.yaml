@@ -1,3 +1,25 @@
+# Definição compartilhada pelos dois serviços de worker: `video-worker` (ocioso, para
+# `exec`) e `video-worker-live` (executa o processo, sob o profile `live`). Mesma imagem,
+# mesmo código, mesmo scratch — a única diferença é rodar ou não o entrypoint.
+x-video-worker-base: &video-worker-base
+  build:
+    context: .
+    dockerfile: Dockerfile.worker.dev
+  volumes:
+    - .:/home/node/app
+    - worker-tmp:/var/tmp/streamtube
+  environment:
+    - WORKER_TMP_DIR=/var/tmp/streamtube
+  depends_on:
+    db:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+    minio-init:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+
 services:
   nestjs-api:
     build: 
@@ -22,23 +44,19 @@ services:
   # Segundo container, mesmo código-fonte, entrypoint separado (`src/worker.ts`).
   # Sem `ports`: o worker consome fila, não serve HTTP.
   video-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker.dev
-    volumes:
-      - .:/home/node/app
-      - worker-tmp:/var/tmp/streamtube
-    environment:
-      - WORKER_TMP_DIR=/var/tmp/streamtube
-    depends_on:
-      db:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
+    <<: *video-worker-base
+
+  # Mesmo container, executando o processo em vez de ficar ocioso. Fica **fora do
+  # profile default de propósito**: um worker vivo drena a fila `video-processing`,
+  # e várias suítes asseveram sobre o conteúdo dela (`getWaitingCount()`) — subi-lo
+  # por padrão tornaria `npm test` instável.
+  #
+  #   docker compose up -d                    # trabalho e testes
+  #   docker compose --profile live up -d     # + processamento automático de verdade
+  video-worker-live:
+    <<: *video-worker-base
+    profiles: ['live']
+    command: ['npm', 'run', 'start:worker']
 
   db:
     image: postgres:17

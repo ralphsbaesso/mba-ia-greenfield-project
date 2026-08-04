@@ -47,6 +47,16 @@ draft ──initiate──▶ (row exists, no bytes)
 
 Playback and download are **302 redirects to pre-signed storage URLs** — the API authorizes, storage serves. The bucket itself is private.
 
+**Running it end to end.** Per this repo's convention, `docker compose up -d` starts containers, not processes — so by default nothing consumes the queue and an upload would sit in `processing` forever. That default is deliberate: a live worker drains the queue that several test suites assert on. To exercise the real pipeline:
+
+```bash
+cd nestjs-project
+docker compose --profile live up -d          # includes video-worker-live, consuming the queue
+docker compose exec nestjs-api npm run start:dev
+```
+
+Details in `nestjs-project/CLAUDE.md` → "Video worker".
+
 ## Docker Networking
 
 This project runs entirely in Docker containers. When configuring connections between services (database, cache, queue, etc.), **always use the Docker Compose service name** as the host — never `localhost` or `127.0.0.1`.

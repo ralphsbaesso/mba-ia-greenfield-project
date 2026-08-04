@@ -40,18 +40,28 @@ Services:
 - `minio` — S3-compatible object storage, API `9000`, console `9001`, user/password `streamtube`
 - `minio-init` — one-shot; creates the private bucket `streamtube` and exits
 - `redis` — Redis 7, port `6379`, `maxmemory-policy noeviction` (BullMQ requires it)
-- `video-worker` — video processing worker; same source tree, separate entrypoint (`src/worker.ts`), **no HTTP port**. Built from `Dockerfile.worker.dev`.
+- `video-worker` — video processing worker; same source tree, separate entrypoint (`src/worker.ts`), **no HTTP port**. Built from `Dockerfile.worker.dev`. Idle by default — see "Video worker" below
+- `video-worker-live` — the same container actually running the entrypoint, under the `live` Compose profile. Not started by a plain `docker compose up -d`
 
 ### Video worker
 
-The worker container follows the same convention as `nestjs-api`: `docker compose up -d` starts the **container**, not the process. Start the worker explicitly, in background:
+`video-worker` follows the same convention as `nestjs-api`: `docker compose up -d` starts the **container**, not the process. Start the worker explicitly, in background:
 
 ```bash
 docker compose exec video-worker npm run start:worker:dev   # watch mode
 docker compose exec video-worker npm run start:worker       # single run
 ```
 
-**Do not leave the worker process running while the test suite runs.** It consumes `video-processing`, and several suites assert on queue contents (`getWaitingCount()`); a live consumer makes them flaky.
+**Do not leave the worker process running while the test suite runs.** It consumes `video-processing`, and several suites assert on queue contents (`getWaitingCount()`); a live consumer makes them flaky. That constraint is the whole reason the default Compose profile leaves the worker idle.
+
+For a stack that actually processes uploads without a manual `exec`, there is a second service under the `live` profile — same image, same source tree, same scratch volume (they share a YAML anchor); the only difference is that it runs the entrypoint:
+
+```bash
+docker compose up -d                   # work and tests: no consumer on the queue
+docker compose --profile live up -d    # + video-worker-live consuming video-processing
+```
+
+Never both at once with the suite: `--profile live` is for exercising the pipeline by hand, `up -d` is for running tests.
 
 **`ffmpeg`/`ffprobe` are in both dev images**, so the full suite — including the specs under `src/videos/processing/` that spawn the binaries — runs in `nestjs-api`, which is the single container every command in this file targets:
 

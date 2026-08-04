@@ -282,3 +282,32 @@ Resultado: 0 schemas vazios em 10, com `required`, `enum`, `maxLength`, `minItem
 
 Vale para `ts-jest` também: um documento construído dentro de um teste não tem schema de
 DTO. Contratos de corpo de requisição se conferem contra o `openapi.json` commitado.
+
+### `docker compose up -d` não processava vídeo
+
+Os dois `Dockerfile.dev` terminam em `CMD ["tail","-f","/dev/null"]` — convenção herdada
+da Fase 01: o compose sobe o **container**, não o processo. Para a API isso é o que o
+projeto já fazia; para o worker, criado nesta fase, significava que uma stack recém-subida
+não tinha consumidor na fila e todo upload ficava em `processing` para sempre.
+
+Autostart no serviço `video-worker` resolveria e criaria outro problema: um worker vivo
+drena `video-processing`, e várias suítes asseveram sobre o conteúdo dela — o próprio
+`nestjs-project/CLAUDE.md` adverte isso. Os dois requisitos são reais e conflitantes.
+
+Resolvido com um **profile**: `video-worker` segue ocioso no default (testes estáveis) e
+`video-worker-live`, sob o profile `live`, roda o entrypoint. Mesma imagem, mesmo código,
+mesmo volume de scratch — compartilham uma âncora YAML, e a única diferença é o `command`.
+
+```bash
+docker compose up -d                   # trabalho e testes
+docker compose --profile live up -d    # + processamento automático
+```
+
+Verificado subindo de verdade: o worker inicializa `VideoProcessingModule` e
+`OrphanDraftCleanupModule`, e o Redis passa a ter `bull:video-processing:stalled-check` e
+`bull:video-maintenance:repeat:orphan-draft-cleanup` — chaves que só existem com um Worker
+BullMQ ativo.
+
+`.env.example` também ganhou `APP_URL` e `SWAGGER_ENABLED`, que o schema Joi conhece mas o
+arquivo não listava (lacuna anterior à fase; ambos têm default, então nunca quebrou o boot,
+mas quem copiava o exemplo não descobria que existe Swagger UI).
