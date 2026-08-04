@@ -40,7 +40,7 @@ Services:
 - `minio` — S3-compatible object storage, API `9000`, console `9001`, user/password `streamtube`
 - `minio-init` — one-shot; creates the private bucket `streamtube` and exits
 - `redis` — Redis 7, port `6379`, `maxmemory-policy noeviction` (BullMQ requires it)
-- `video-worker` — video processing worker; same source tree, separate entrypoint (`src/worker.ts`), **no HTTP port**. Built from `Dockerfile.worker.dev`, which is the only image carrying `ffmpeg`/`ffprobe`.
+- `video-worker` — video processing worker; same source tree, separate entrypoint (`src/worker.ts`), **no HTTP port**. Built from `Dockerfile.worker.dev`.
 
 ### Video worker
 
@@ -53,15 +53,15 @@ docker compose exec video-worker npm run start:worker       # single run
 
 **Do not leave the worker process running while the test suite runs.** It consumes `video-processing`, and several suites assert on queue contents (`getWaitingCount()`); a live consumer makes them flaky.
 
-**Tests that spawn `ffmpeg`/`ffprobe` must run in `video-worker`, not in `nestjs-api`** — the binaries are not in the API image:
+**`ffmpeg`/`ffprobe` are in both dev images**, so the full suite — including the specs under `src/videos/processing/` that spawn the binaries — runs in `nestjs-api`, which is the single container every command in this file targets:
 
 ```bash
-docker compose exec video-worker npm test -- --runInBand src/videos/processing/ffprobe.service.integration-spec.ts
+docker compose exec nestjs-api npm test -- --runInBand
 ```
 
-The worker container mounts the same source tree and reads the same `.env`, so **the full suite can simply be run there** and every suite passes. Running it in `nestjs-api` fails the ffprobe integration spec.
+The split is a **runtime** concern, not a test one: only the worker processes video in production, so the runtime image of the API stays without the binaries (phase-03-videos/TD-07). In development both images carry them because splitting the test run across two containers is not expressible in a single `npm test` and silently hides suites.
 
-`ffmpeg`/`ffprobe` live **only** in the worker image — verify with `docker compose exec video-worker ffprobe -version` and confirm `docker compose exec nestjs-api command -v ffprobe` finds nothing. The worker's scratch area is the named volume `worker-tmp`, mounted at `/var/tmp/streamtube` (`WORKER_TMP_DIR`) and owned by `node`.
+The worker container mounts the same source tree and reads the same `.env`, so the full suite also passes there. Verify the binaries with `docker compose exec nestjs-api ffprobe -version`. The worker's scratch area is the named volume `worker-tmp`, mounted at `/var/tmp/streamtube` (`WORKER_TMP_DIR`) and owned by `node`.
 
 ### MinIO image pin
 
@@ -135,7 +135,7 @@ Integration and e2e suites share a single test database. They **must** be run wi
 
 ```bash
 docker compose exec nestjs-api npm test -- --runInBand
-docker compose exec nestjs-api npm run test:e2e   # already configured
+docker compose exec nestjs-api npm run test:e2e   # serial via `maxWorkers: 1` in test/jest-e2e.json
 ```
 
 Parallel execution causes FK violations, deadlocks, and cross-suite contamination because suites truncate or seed shared tables concurrently.
@@ -168,6 +168,7 @@ These settings are required in `package.json` (jest config) and `test/jest-e2e.j
 
 - `setupFiles: ["dotenv/config"]` — without this, `.env` is not loaded inside the Jest process. `DB_HOST`, `JWT_SECRET`, etc. fall back to undefined or to the host's `localhost`, breaking container-to-container DNS.
 - `testRegex: '.*\\.(spec|integration-spec)\\.ts$'` — covers both unit (`*.spec.ts`) and integration (`*.integration-spec.ts`) suffixes.
+- `maxWorkers: 1` in `test/jest-e2e.json` — the e2e suites share one database and truncate the same tables. In parallel they produce FK violations inside `cleanAllTables` and cross-suite contamination (a `409` that arrives as `201`). The guarantee lives in the config, not in the `test:e2e` script, so it also holds for anyone invoking `jest --config ./test/jest-e2e.json` directly.
 
 Do not add new test-file suffixes; if a new test type is needed, update the regex deliberately.
 
@@ -195,6 +196,60 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 - Each domain feature gets its own module (e.g., `UsersModule`, `VideosModule`) registered in `AppModule`
 - Controllers handle HTTP routing; Services hold business logic; both are scoped to their module
+
+## Videos module
+
+`src/videos/` is split by concern: `uploads/` (initiate, complete, cancel, orphan cleanup), `processing/` (queue, ffprobe, thumbnail, processor, failure handling), `delivery/` (presigned redirects), plus the read paths in `videos.service.ts` / `videos.controller.ts`.
+
+### Endpoints
+
+The authoritative contract is `openapi.json`, regenerated with `npm run openapi:export`.
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `POST` | `/videos/uploads` | owner | Initiate: creates the `draft` row, opens the multipart upload, returns one presigned URL per part |
+| `POST` | `/videos/{videoId}/uploads/complete` | owner | Complete the multipart upload and publish the processing job |
+| `DELETE` | `/videos/{videoId}/uploads` | owner | Cancel: aborts the multipart upload and drops the draft |
+| `GET` | `/videos/me/{videoId}` | owner | Read one of the caller's own videos **in any state** |
+| `POST` | `/videos/{videoId}/reprocess` | owner | Re-publish the job for a video in `error` |
+| `GET` | `/videos/{publicId}` | public | Public metadata — `ready` only |
+| `GET` | `/videos/{publicId}/stream` | public | `302` to a presigned playback URL |
+| `GET` | `/videos/{publicId}/download` | public | `302` to the same object, signed as an attachment |
+| `GET` | `/videos/{publicId}/thumbnail` | public | `302` to a presigned thumbnail URL, pinned to `image/jpeg` |
+
+Two identifiers, deliberately: owner routes take the internal `videoId` (UUID), public routes take `public_id`. `public_id` is `randomBytes(9).toString('base64url')` — 12 chars, 72 bits (`src/videos/videos.id.ts`). A malformed `videoId` answers `404 VIDEO_NOT_FOUND`, never `400` — see `isVideoId`.
+
+Delivery TTLs live in `src/videos/delivery/video-delivery.constants.ts`: 15 min for the signature, and the video redirect is `no-store` (it *is* the authorization point) while the thumbnail redirect is cacheable for 5 min.
+
+### Status cycle
+
+`draft → processing → ready | error`, with `error → processing` via reprocess (`VideoStatus` in `src/videos/entities/video.entity.ts`).
+
+Two `CHECK` constraints enforce the `ready` contract. Both are **state-scoped** (`status <> 'ready' OR ...`) because the initiate `INSERT` creates the row before a single byte exists:
+
+- `CHK_videos_ready_requires_metadata` — `duration_seconds`, `width`, `height`, `video_codec`, `container_format`, `size_bytes` all present
+- `CHK_videos_ready_requires_thumbnail` — `thumbnail_key` present
+
+`audio_codec` and `bitrate_bps` stay nullable even for `ready`: a file may have no audio track, and some containers report no bitrate. Migration: `1785543527910-CreateVideos.ts`.
+
+### Storage key layout
+
+One private bucket, one prefix per kind of object (`src/storage/storage.constants.ts`). Both keys derive from the video's `id`, so the worker and the delivery paths resolve them without a lookup and a re-run overwrites instead of duplicating:
+
+```
+videos/<video.id>.<ext>      # ext from the content type declared at initiate, never from the filename
+thumbnails/<video.id>.jpg
+```
+
+`VIDEO_CONTENT_TYPE_EXTENSIONS` is both the extension map and the allow-list the initiate DTO validates against — a content type absent from it has no extension to derive and no fallback. The resolved key is **persisted** in `storage_key`, not recomputed from the convention.
+
+### Queue contract
+
+Two queues (`src/videos/processing/video-queue.constants.ts`, `src/videos/uploads/orphan-draft-cleanup.constants.ts`):
+
+- `video-processing` — job `process-video`, payload `{ videoId }` and nothing else; the worker reads the rest from the row. `jobId` is the video id, so a client calling complete twice dedups at the queue level. `attempts: 3` with exponential backoff from 5s; concurrency 1, which bounds peak scratch disk to one downloaded file.
+- `video-processing-dlq` — deliberately consumer-less. BullMQ has no native dead-letter queue, so this is the explicit pattern that keeps exhausted jobs instead of dropping them.
+- `video-maintenance` — job `orphan-draft-cleanup`, scheduled hourly, aborts multipart uploads for drafts older than 24h. Its own queue so it never competes for `video-processing`'s single slot.
 
 ## Code Conventions
 

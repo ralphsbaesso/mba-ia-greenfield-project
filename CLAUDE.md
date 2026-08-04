@@ -12,7 +12,7 @@ This is a monorepo with two main areas:
 
 - `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Contains modules for users, channels, videos, comments, etc.
 - `docs/` — Project documentation, architecture diagrams, and planning.
-- `next-frontend/` (Next.js) — not yet initialized
+- `next-frontend/` — Frontend (Next.js). App Router, with its own test suites under `tests/`.
 
 ## Architecture (C4 Container Diagram)
 
@@ -23,8 +23,29 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 - **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
 - **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Message Queue** (BullMQ on Redis) → video processing job queue
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+## Video Pipeline
+
+The upload path is the one place where the architecture deviates from "everything goes through the API", so it is worth stating at this level. Endpoint-by-endpoint detail lives in `nestjs-project/CLAUDE.md` → "Videos module".
+
+**The video file never passes through the API.** The client asks the API to initiate an upload; the API creates the row, opens an S3 multipart upload and returns one pre-signed URL per part. The client `PUT`s the parts straight to Object Storage and then calls complete. This is what allows a 10 GB ceiling without the API holding the bytes.
+
+```
+draft ──initiate──▶ (row exists, no bytes)
+  │
+  └──complete──▶ processing ──worker──▶ ready
+                      │
+                      └──failure──▶ error ──reprocess──▶ processing
+```
+
+- **draft** — row created at initiate. A draft that is never completed is swept by a scheduled orphan-draft cleanup, which also aborts the multipart upload in storage.
+- **processing** — complete published a job on the `video-processing` queue.
+- **ready** — the worker downloaded the object, probed it with `ffprobe` (duration, resolution, codecs), generated a thumbnail with `ffmpeg`, and wrote metadata + status in one write. Only `ready` videos are visible on the public routes.
+- **error** — processing failed; `failure_reason` records why. The owner can reprocess.
+
+Playback and download are **302 redirects to pre-signed storage URLs** — the API authorizes, storage serves. The bucket itself is private.
 
 ## Docker Networking
 
