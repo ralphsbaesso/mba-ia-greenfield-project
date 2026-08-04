@@ -867,31 +867,31 @@ Raízes independentes: **SI-03.1** (infraestrutura) e **SI-03.3** (schema) podem
 
 ## Deliverables
 
-- [ ] SI-03.1 — Provisionar MinIO e Redis no Docker Compose
-- [ ] SI-03.2 — Configurar o cliente de object storage e o layout de chaves
-- [ ] SI-03.3 — Criar a entidade `Video` e sua migration
-- [ ] SI-03.4 — Configurar a fila `video-processing` (BullMQ + Redis)
-- [ ] SI-03.5 — Implementar o initiate do upload multipart (pré-cadastro do rascunho)
-- [ ] SI-03.6 — Implementar o complete do upload e a publicação do job
-- [ ] SI-03.7 — Expor os endpoints de upload (initiate e complete)
-- [ ] SI-03.8 — Provisionar a imagem e o entrypoint do worker
-- [ ] SI-03.9 — Implementar o download para arquivo temporário e a sonda `ffprobe`
-- [ ] SI-03.10 — Implementar a geração automática de thumbnail
-- [ ] SI-03.11 — Implementar o processador do job (persistência e transição para `ready`)
-- [ ] SI-03.12 — Implementar o tratamento de falhas do processamento
-- [ ] SI-03.13 — Implementar as leituras de vídeo (pública `ready`-only e do dono)
-- [ ] SI-03.14 — Expor os endpoints de leitura de vídeo
-- [ ] SI-03.15 — Implementar a entrega por redirect presignado (streaming, download e thumbnail)
-- [ ] SI-03.16 — Implementar o cancelamento de upload e a limpeza de rascunhos órfãos
-- [ ] SI-03.17 — Expor o reprocessamento guardado
+- [x] SI-03.1 — Provisionar MinIO e Redis no Docker Compose
+- [x] SI-03.2 — Configurar o cliente de object storage e o layout de chaves
+- [x] SI-03.3 — Criar a entidade `Video` e sua migration
+- [x] SI-03.4 — Configurar a fila `video-processing` (BullMQ + Redis)
+- [x] SI-03.5 — Implementar o initiate do upload multipart (pré-cadastro do rascunho)
+- [x] SI-03.6 — Implementar o complete do upload e a publicação do job
+- [x] SI-03.7 — Expor os endpoints de upload (initiate e complete)
+- [x] SI-03.8 — Provisionar a imagem e o entrypoint do worker
+- [x] SI-03.9 — Implementar o download para arquivo temporário e a sonda `ffprobe`
+- [x] SI-03.10 — Implementar a geração automática de thumbnail
+- [x] SI-03.11 — Implementar o processador do job (persistência e transição para `ready`)
+- [x] SI-03.12 — Implementar o tratamento de falhas do processamento
+- [x] SI-03.13 — Implementar as leituras de vídeo (pública `ready`-only e do dono)
+- [x] SI-03.14 — Expor os endpoints de leitura de vídeo
+- [x] SI-03.15 — Implementar a entrega por redirect presignado (streaming, download e thumbnail)
+- [x] SI-03.16 — Implementar o cancelamento de upload e a limpeza de rascunhos órfãos
+- [x] SI-03.17 — Expor o reprocessamento guardado
 
 **Full test suites:**
 
-- [ ] Backend tests pass (`docker compose exec nestjs-api npm test -- --runInBand`)
-- [ ] Integration tests pass (`docker compose exec nestjs-api npm run test:integration`)
-- [ ] E2E tests pass (`docker compose exec nestjs-api npm run test:e2e`)
-- [ ] Type/compilation checks pass (`docker compose exec nestjs-api npx tsc --noEmit`)
-- [ ] Lint passes (`docker compose exec nestjs-api npm run lint`)
-- [ ] `openapi.json` regenerado (`docker compose exec nestjs-api npm run openapi:export`) e commitado com os endpoints desta fase
+- [x] Backend tests pass (`docker compose exec nestjs-api npm test -- --runInBand`)
+- [x] Integration tests pass (`docker compose exec nestjs-api npm run test:integration`)
+- [x] E2E tests pass (`docker compose exec nestjs-api npm run test:e2e`)
+- [x] Type/compilation checks pass (`docker compose exec nestjs-api npx tsc --noEmit`)
+- [x] Lint passes (`docker compose exec nestjs-api npm run lint`)
+- [x] `openapi.json` regenerado (`docker compose exec nestjs-api npm run openapi:export`) e commitado com os endpoints desta fase
 
 _Todos os comandos `npm`/`npx` rodam **dentro do container**, nunca no host — rodar no host causa divergência de env vars (`DB_HOST` resolvendo para `localhost`) e usa outra versão do Node (`nestjs-project/CLAUDE.md` § Commands). As suítes de integração e e2e compartilham um único banco de teste e exigem `--runInBand`._
