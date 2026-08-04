@@ -202,3 +202,70 @@
   - `VideosService` passou a depender da fila, então `VideosModule` importa `VideoQueueModule` e os dois specs que montam esse módulo ganharam `redisConfig` no `ConfigModule`.
   - **Como o e2e "deixa o worker consumir":** sobe `VideoProcessingModule` como um **segundo contexto Nest**, dentro dos dois testes que precisam disso e fechado ao final de cada um. Um worker vivo durante a suíte inteira drenaria a fila que os outros testes inspecionam — que é exatamente o que o `CLAUDE.md` do subprojeto adverte. Consequência: **esta suíte precisa rodar no container `video-worker`**, porque transcodifica de verdade (`ffprobe`/`ffmpeg` não existem na imagem da API).
   - `openapi.json` regenerado: 19 paths, com os 9 endpoints de vídeo da fase.
+
+---
+
+## Fechamento da fase
+
+Rodada de encerramento, depois dos 17 SIs. Tudo aqui saiu de executar a Definition of
+Done inteira contra o código, não de releitura de documentação.
+
+### Correções de suíte
+
+- **Regressão nas 10 suítes legadas de `auth`/`users`/`channels` (63 testes).** A relação
+  inversa `Channel.videos`, introduzida por esta fase, só resolve se `Video` estiver na
+  lista de entidades do `DataSource`; cada uma dessas suítes declara o próprio
+  `ALL_ENTITIES` e não foi atualizada. Nenhum SI declarou essas suítes na sua Tests table,
+  então a validação SI a SI ficou verde e o problema só apareceu na suíte completa.
+- **`npm run test:e2e` vermelho como estava commitado.** Antes desta fase só
+  `auth.e2e-spec.ts` tocava o banco; as 5 suítes novas de vídeo passaram a truncar as
+  mesmas tabelas em paralelo. Resolvido com `maxWorkers: 1` no `test/jest-e2e.json` — no
+  config, não no script, para valer também para quem invoca o jest direto.
+- **Deadlock no spec de migrations.** O `beforeAll` dropava as tabelas em `Promise.all`;
+  um `DROP ... CASCADE` trava a tabela dropada **e** tudo que a referencia, então drops
+  concorrentes de tabelas com FK entre si pegam os locks em ordens diferentes. Só aparecia
+  em `npm run test:integration`, que os Deliverables pedem mas cuja execução ninguém tinha
+  registrado. Serializado.
+
+### `ffmpeg` na imagem de dev da API
+
+As observações dos SI-03.9 a SI-03.17 dizem que as suítes que spawnam `ffmpeg`/`ffprobe`
+precisam rodar em `video-worker`. **Isso deixou de valer:** `Dockerfile.dev` passou a
+instalar `ffmpeg`, e a suíte completa fecha verde em `nestjs-api`, que é o container que
+todos os Deliverables citam. Partir a execução em dois containers não é expressável num
+`npm test` e esconde suítes silenciosamente. O TD-07 segue valendo para a imagem de
+**runtime** da API, que é onde a separação importa.
+
+### `title` do vídeo — resolvido depois do plano
+
+O plano registrava `title` como `_undetermined_` (`### API Contracts → POST /videos/uploads`),
+delegando metadados descritivos à Fase 04. Mas a cláusula **Persistência** do desafio lista
+`título` entre as colunas mínimas da tabela de vídeos. Fechado nesta rodada:
+
+- Coluna `title varchar(200) NOT NULL`, em migration própria
+  (`1785629400000-AddVideoTitle.ts`) em vez de editar a `CreateVideos` já publicada. Entra
+  com `DEFAULT ''` e o default é removido em seguida, porque a tabela pode já ter linhas.
+- Obrigatório no initiate (1..200 chars, aparado antes de validar, então título só de
+  espaço em branco é `400`) — o rascunho pré-cadastrado nunca é uma linha sem nome.
+- Exposto nas duas leituras, pública e do dono.
+- Fase 04 continua dona da **edição** de metadados; `description` segue fora de escopo.
+
+### Estado final da Definition of Done
+
+Todos em `nestjs-api`, exit 0:
+
+| Comando | Resultado |
+|---|---|
+| `npx tsc --noEmit` | exit 0 |
+| `npm run lint` | 0 erros |
+| `npx jest --runInBand` | 47 suítes, 384 testes |
+| `npm run test:integration` | 22 suítes, 191 testes |
+| `npm run test:e2e` | 8 suítes, 99 testes |
+
+### Pendência conhecida, fora do escopo desta fase
+
+`openapi.json` sai com `components.schemas.*Dto` vazios (`{"type":"object","properties":{}}`).
+O plugin `@nestjs/swagger` está configurado no `nest-cli.json`, mas `npm run openapi:export`
+roda por `ts-node` e não passa pelo build da CLI, então a inferência de DTO nunca acontece.
+É sistêmico e anterior a esta fase — atinge igualmente os DTOs de `auth` da Fase 02. Os
+`paths` e os schemas de resposta escritos à mão nos `@ApiResponse` estão corretos.

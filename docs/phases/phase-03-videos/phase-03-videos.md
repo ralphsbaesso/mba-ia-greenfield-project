@@ -549,6 +549,7 @@ New entity. The row is created at **initiate**, before any byte is uploaded (`ph
 | `id` | uuid | PK, generated — internal identifier, used for FKs and for the owner routes (`phase-03-videos/TD-10`) |
 | `public_id` | varchar | not null, **unique** — short random `crypto.randomBytes` rendered base64url, sliced to a fixed length; the only identifier exposed in public routes and payloads (`phase-03-videos/TD-10`) |
 | `channel_id` | uuid | not null, FK → `channels(id)`, non-unique index — resolved from the JWT `sub` in the initiate handler (`video-authorization-and-metadata/TD-02`) |
+| `title` | varchar(200) | not null — supplied on the initiate request, so the pre-registered draft is never a nameless row. Required by the challenge's *Persistência* clause; added after the plan was written, in migration `AddVideoTitle1785629400000`. Fase 04 still owns *editing* it |
 | `status` | enum (`draft` \| `processing` \| `ready` \| `error`) | not null, default `draft` — Postgres enum column (`phase-03-videos/TD-12`) |
 | `storage_key` | varchar | not null — resolved object key for the video, derived from `id` under the video prefix; persisted rather than recomputed from the convention (`phase-03-videos/TD-03`) |
 | `thumbnail_key` | varchar | nullable — resolved object key for the thumbnail, written by the worker (`phase-03-videos/TD-03`, `phase-03-videos/TD-09`) |
@@ -593,7 +594,7 @@ Initiate. The security boundary of the whole upload path — it is what mints th
 **Request body:**
 - declared content type: string, required — the object extension is derived from it, never from the client-supplied filename (`phase-03-videos/TD-03`)
 - total size in bytes: integer, required — determines how many parts are presigned at initiate (`phase-03-videos/TD-05`)
-- _(any further descriptive fields — title, description — are `_undetermined_`: no TD in scope fixes them; Fase 04 owns video metadata editing)_
+- title: string, required — 1..200 chars, trimmed. Resolved after the fact: the challenge's *Persistência* clause lists `título` among the minimum columns, so it is no longer `_undetermined_`. `description` remains out of scope; Fase 04 owns video metadata **editing**
 
 **Response 201:**
 - videoId: string (uuid) — the internal `id`; the client needs it for `complete` (`phase-03-videos/TD-05`)

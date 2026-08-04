@@ -207,7 +207,7 @@ The authoritative contract is `openapi.json`, regenerated with `npm run openapi:
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `POST` | `/videos/uploads` | owner | Initiate: creates the `draft` row, opens the multipart upload, returns one presigned URL per part |
+| `POST` | `/videos/uploads` | owner | Initiate: creates the `draft` row (with its `title`), opens the multipart upload, returns one presigned URL per part |
 | `POST` | `/videos/{videoId}/uploads/complete` | owner | Complete the multipart upload and publish the processing job |
 | `DELETE` | `/videos/{videoId}/uploads` | owner | Cancel: aborts the multipart upload and drops the draft |
 | `GET` | `/videos/me/{videoId}` | owner | Read one of the caller's own videos **in any state** |
@@ -230,7 +230,11 @@ Two `CHECK` constraints enforce the `ready` contract. Both are **state-scoped** 
 - `CHK_videos_ready_requires_metadata` — `duration_seconds`, `width`, `height`, `video_codec`, `container_format`, `size_bytes` all present
 - `CHK_videos_ready_requires_thumbnail` — `thumbnail_key` present
 
-`audio_codec` and `bitrate_bps` stay nullable even for `ready`: a file may have no audio track, and some containers report no bitrate. Migration: `1785543527910-CreateVideos.ts`.
+`audio_codec` and `bitrate_bps` stay nullable even for `ready`: a file may have no audio track, and some containers report no bitrate.
+
+`title` is `NOT NULL` and comes from the initiate request (1..200 chars, trimmed) — a pre-registered draft is never a nameless row. Editing it belongs to Fase 04.
+
+Migrations: `1785543527910-CreateVideos.ts`, then `1785629400000-AddVideoTitle.ts`.
 
 ### Storage key layout
 
