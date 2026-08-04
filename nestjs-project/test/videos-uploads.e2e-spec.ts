@@ -14,6 +14,7 @@ import { buildSwaggerDocument } from '../src/swagger/swagger-document';
 import { cleanAllTables } from '../src/test/create-test-data-source';
 import { Video, VideoStatus } from '../src/videos/entities/video.entity';
 import { VIDEO_PROCESSING_QUEUE } from '../src/videos/processing/video-queue.constants';
+import { generatePublicId } from '../src/videos/videos.id';
 
 // supertest types `body` as `any`; these describe the shapes the endpoints return
 // so assertions run against a real contract instead of an untyped bag.
@@ -43,6 +44,8 @@ type OpenApiOperation = {
 const PART_SIZE_BYTES = 64 * 1024 * 1024;
 const PART_BODY = 'streamtube-e2e-part';
 const ERROR_ENVELOPE_REF = '#/components/schemas/ApiErrorEnvelope';
+
+const TITLE = 'Upload e2e seed';
 
 describe('Video uploads (e2e)', () => {
   let app: INestApplication<App>;
@@ -120,7 +123,11 @@ describe('Video uploads (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/videos/uploads')
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ contentType: 'video/mp4', sizeBytes: PART_BODY.length })
+      .send({
+        title: TITLE,
+        contentType: 'video/mp4',
+        sizeBytes: PART_BODY.length,
+      })
       .expect(201);
 
     const body = res.body as InitiateBody;
@@ -139,7 +146,7 @@ describe('Video uploads (e2e)', () => {
     it('rejects an anonymous initiate with 401 and creates no draft', async () => {
       await request(app.getHttpServer())
         .post('/videos/uploads')
-        .send({ contentType: 'video/mp4', sizeBytes: 1024 })
+        .send({ title: TITLE, contentType: 'video/mp4', sizeBytes: 1024 })
         .expect(401);
 
       expect(await videos.count()).toBe(0);
@@ -151,7 +158,11 @@ describe('Video uploads (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/videos/uploads')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ contentType: 'video/mp4', sizeBytes: PART_SIZE_BYTES * 2 + 1 })
+        .send({
+          title: TITLE,
+          contentType: 'video/mp4',
+          sizeBytes: PART_SIZE_BYTES * 2 + 1,
+        })
         .expect(201);
 
       const body = res.body as InitiateBody;
@@ -181,7 +192,7 @@ describe('Video uploads (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/videos/uploads')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ contentType: 'video/mp4', sizeBytes: 1024 })
+        .send({ title: TITLE, contentType: 'video/mp4', sizeBytes: 1024 })
         .expect(201);
 
       const body = res.body as InitiateBody;
@@ -224,13 +235,31 @@ describe('Video uploads (e2e)', () => {
       expect(await videos.count()).toBe(0);
     });
 
+    it.each([
+      ['missing', undefined],
+      ['blank', '   '],
+      ['longer than 200 chars', 'a'.repeat(201)],
+    ])('rejects a %s title with 400', async (_label, title) => {
+      const accessToken = await registerConfirmAndLogin(
+        `title-${generatePublicId()}@example.com`,
+      );
+
+      await request(app.getHttpServer())
+        .post('/videos/uploads')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ title, contentType: 'video/mp4', sizeBytes: 1024 })
+        .expect(400);
+
+      expect(await videos.count()).toBe(0);
+    });
+
     it('rejects an unsupported content type with 400', async () => {
       const accessToken = await registerConfirmAndLogin('zip@example.com');
 
       await request(app.getHttpServer())
         .post('/videos/uploads')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ contentType: 'application/zip', sizeBytes: 1024 })
+        .send({ title: TITLE, contentType: 'application/zip', sizeBytes: 1024 })
         .expect(400);
 
       expect(await videos.count()).toBe(0);

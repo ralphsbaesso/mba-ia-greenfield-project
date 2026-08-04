@@ -7,6 +7,7 @@ import { Video } from '../videos/entities/video.entity';
 import { CreateUsersAndChannels1775687773260 } from './migrations/1775687773260-CreateUsersAndChannels';
 import { CreateAuthTokens1777579850478 } from './migrations/1777579850478-CreateAuthTokens';
 import { CreateVideos1785543527910 } from './migrations/1785543527910-CreateVideos';
+import { AddVideoTitle1785629400000 } from './migrations/1785629400000-AddVideoTitle';
 import { createTestDataSource } from '../test/create-test-data-source';
 
 const MANAGED_TABLES = [
@@ -29,6 +30,7 @@ describe('Database migrations (integration)', () => {
           CreateUsersAndChannels1775687773260,
           CreateAuthTokens1777579850478,
           CreateVideos1785543527910,
+          AddVideoTitle1785629400000,
         ],
       },
     );
@@ -61,7 +63,7 @@ describe('Database migrations (integration)', () => {
   it('should apply all migrations and create every managed table', async () => {
     const ranMigrations = await dataSource.runMigrations();
 
-    expect(ranMigrations).toHaveLength(3);
+    expect(ranMigrations).toHaveLength(4);
 
     const result = await dataSource.query<{ table_name: string }[]>(
       `SELECT table_name FROM information_schema.tables
@@ -80,7 +82,20 @@ describe('Database migrations (integration)', () => {
     ]);
   });
 
-  it('should revert the last migration and remove the videos table', async () => {
+  it('should revert the last migration and drop the title column', async () => {
+    await dataSource.undoLastMigration();
+
+    const result = await dataSource.query<{ column_name: string }[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'videos'
+         AND column_name = 'title'`,
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it('should revert down to removing the videos table', async () => {
+    // Continues where the previous test stopped: the title column is already
+    // reverted, so one more step drops the table itself.
     await dataSource.undoLastMigration();
 
     const result = await dataSource.query<{ table_name: string }[]>(

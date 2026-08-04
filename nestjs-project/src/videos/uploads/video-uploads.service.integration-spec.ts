@@ -28,6 +28,7 @@ import { VideoUploadsService } from './video-uploads.service';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
 const CONTENT_TYPE = 'video/mp4';
+const TITLE = 'Upload integration seed';
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,6 +91,7 @@ describe('VideoUploadsService (integration)', () => {
   describe('draft pre-registration', () => {
     it('should persist the draft row before any byte is transferred', async () => {
       const result = await service.initiate(userId, {
+        title: TITLE,
         contentType: CONTENT_TYPE,
         totalSizeBytes: 5 * 1024 * 1024,
       });
@@ -104,6 +106,7 @@ describe('VideoUploadsService (integration)', () => {
 
     it('should leave the object absent from storage until parts are uploaded', async () => {
       const result = await service.initiate(userId, {
+        title: TITLE,
         contentType: CONTENT_TYPE,
         totalSizeBytes: 1024,
       });
@@ -115,6 +118,7 @@ describe('VideoUploadsService (integration)', () => {
 
     it('should cover the declared size with 64 MiB parts', async () => {
       const result = await service.initiate(userId, {
+        title: TITLE,
         contentType: CONTENT_TYPE,
         totalSizeBytes: UPLOAD_PART_SIZE_BYTES * 2 + 1,
       });
@@ -128,6 +132,7 @@ describe('VideoUploadsService (integration)', () => {
   describe('presigned part grant', () => {
     it('should accept a direct PUT with no authentication header', async () => {
       const result = await service.initiate(userId, {
+        title: TITLE,
         contentType: CONTENT_TYPE,
         totalSizeBytes: 1024,
       });
@@ -143,6 +148,7 @@ describe('VideoUploadsService (integration)', () => {
 
     it('should refuse a part PUT once the grant has expired', async () => {
       const result = await service.initiate(userId, {
+        title: TITLE,
         contentType: CONTENT_TYPE,
         totalSizeBytes: 1024,
       });
@@ -170,6 +176,7 @@ describe('VideoUploadsService (integration)', () => {
 
       await expect(
         service.initiate(orphan.id, {
+          title: TITLE,
           contentType: CONTENT_TYPE,
           totalSizeBytes: 1024,
         }),
@@ -193,6 +200,7 @@ describe('VideoUploadsService (integration)', () => {
       parts: CompletedPart[];
     }> => {
       const grant = await service.initiate(ownerId, {
+        title: TITLE,
         contentType: CONTENT_TYPE,
         totalSizeBytes: PART_BODY.length,
       });

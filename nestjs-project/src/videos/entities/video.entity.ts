@@ -54,6 +54,10 @@ export class Video {
   @Column({ type: 'uuid' })
   channel_id: string;
 
+  /** Supplied at initiate — a draft exists with its title from the first request. */
+  @Column({ type: 'varchar', length: 200 })
+  title: string;
+
   @Column({
     type: 'enum',
     enum: VideoStatus,

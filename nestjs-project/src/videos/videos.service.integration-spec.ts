@@ -118,6 +118,7 @@ describe('VideosService (integration)', () => {
       videos.create({
         public_id: generatePublicId(),
         channel_id: ownerChannelId,
+        title: 'Service seed',
         status,
         storage_key: 'videos/seed.mp4',
         ...(isReady && {
@@ -149,6 +150,7 @@ describe('VideosService (integration)', () => {
 
       expect(result).toEqual({
         publicId: video.public_id,
+        title: video.title,
         ...READY_METADATA,
       });
     });

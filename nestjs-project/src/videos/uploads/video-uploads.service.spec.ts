@@ -76,7 +76,11 @@ describe('VideoUploadsService — initiate', () => {
   });
 
   const initiate = (totalSizeBytes: number) =>
-    service.initiate(USER_ID, { contentType: 'video/mp4', totalSizeBytes });
+    service.initiate(USER_ID, {
+      title: TITLE,
+      contentType: 'video/mp4',
+      totalSizeBytes,
+    });
 
   describe('part partitioning', () => {
     it('should presign a single part for a file smaller than the part size', async () => {
@@ -210,6 +214,7 @@ describe('VideoUploadsService — initiate', () => {
 
 const VIDEO_ID = '33333333-3333-4333-8333-333333333333';
 const PUBLIC_ID = 'aBcDeFgHiJkL';
+const TITLE = 'A video with a title';
 const STORAGE_KEY = `videos/${VIDEO_ID}.mp4`;
 const ETAGS = [
   { partNumber: 1, etag: '"etag-1"' },
@@ -230,6 +235,7 @@ describe('VideoUploadsService — complete', () => {
       id: VIDEO_ID,
       public_id: PUBLIC_ID,
       channel_id: CHANNEL_ID,
+      title: TITLE,
       status: VideoStatus.DRAFT,
       storage_key: STORAGE_KEY,
       upload_id: UPLOAD_ID,

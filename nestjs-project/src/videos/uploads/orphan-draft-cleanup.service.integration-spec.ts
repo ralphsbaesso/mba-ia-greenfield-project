@@ -96,6 +96,7 @@ describe('OrphanDraftCleanupService (integration)', () => {
       videos.create({
         public_id: publicId,
         channel_id: channelId,
+        title: 'Cleanup seed',
         status,
         storage_key: storageKey,
         upload_id: uploadId,

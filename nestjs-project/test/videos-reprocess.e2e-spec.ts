@@ -146,6 +146,7 @@ describe('Video reprocess (e2e)', () => {
       videos.create({
         public_id: publicId,
         channel_id: channelId,
+        title: 'Reprocess e2e seed',
         status,
         storage_key: `videos/reprocess-${publicId}.mp4`,
         ...(status === VideoStatus.ERROR && {

@@ -24,6 +24,7 @@ import {
 } from './video-uploads.constants';
 
 export interface InitiateUploadInput {
+  title: string;
   contentType: string;
   totalSizeBytes: number;
 }
@@ -82,6 +83,7 @@ export class VideoUploadsService {
         id: videoId,
         public_id: generatePublicId(),
         channel_id: channelId,
+        title: input.title,
         storage_key: storageKey,
         upload_id: uploadId,
       }),

@@ -84,6 +84,7 @@ export class VideoUploadsController {
     @Body() dto: InitiateUploadDto,
   ): Promise<InitiateUploadResult> {
     return this.uploads.initiate(user.sub, {
+      title: dto.title,
       contentType: dto.contentType,
       totalSizeBytes: dto.sizeBytes,
     });

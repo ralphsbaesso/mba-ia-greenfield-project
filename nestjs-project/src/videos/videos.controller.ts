@@ -101,6 +101,7 @@ export class VideosController {
     schema: {
       properties: {
         publicId: { type: 'string' },
+        title: { type: 'string' },
         status: {
           type: 'string',
           enum: ['draft', 'processing', 'ready', 'error'],
@@ -153,6 +154,7 @@ export class VideosController {
     schema: {
       properties: {
         publicId: { type: 'string' },
+        title: { type: 'string' },
         ...METADATA_PROPERTIES,
       },
     },

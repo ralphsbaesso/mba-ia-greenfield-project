@@ -20,6 +20,7 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CHANNEL_ID = '22222222-2222-4222-8222-222222222222';
 const VIDEO_ID = '33333333-3333-4333-8333-333333333333';
 const PUBLIC_ID = 'aBcDeFgHiJkL';
+const TITLE = 'A video with a title';
 
 const errorOf = async (
   call: Promise<unknown>,
@@ -36,6 +37,7 @@ const row = (overrides: Partial<Video> = {}): Video =>
     id: VIDEO_ID,
     public_id: PUBLIC_ID,
     channel_id: CHANNEL_ID,
+    title: TITLE,
     status: VideoStatus.READY,
     storage_key: `videos/${VIDEO_ID}.mp4`,
     thumbnail_key: `thumbnails/${VIDEO_ID}.jpg`,
@@ -96,6 +98,7 @@ describe('VideosService', () => {
 
       expect(result).toEqual({
         publicId: PUBLIC_ID,
+        title: TITLE,
         duration_seconds: 12.345,
         width: 1920,
         height: 1080,

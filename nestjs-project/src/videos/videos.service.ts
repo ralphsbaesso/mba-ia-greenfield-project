@@ -39,6 +39,7 @@ export interface VideoMetadata {
  */
 export interface PublicVideo extends VideoMetadata {
   publicId: string;
+  title: string;
 }
 
 export interface ReprocessResult {
@@ -49,6 +50,7 @@ export interface ReprocessResult {
 /** The owner's status poll — any state, plus the reason when it failed. */
 export interface OwnerVideo extends VideoMetadata {
   publicId: string;
+  title: string;
   status: VideoStatus;
   failure_reason: string | null;
 }
@@ -67,12 +69,17 @@ function toMetadata(video: Video): VideoMetadata {
 }
 
 export function toPublicVideo(video: Video): PublicVideo {
-  return { publicId: video.public_id, ...toMetadata(video) };
+  return {
+    publicId: video.public_id,
+    title: video.title,
+    ...toMetadata(video),
+  };
 }
 
 export function toOwnerVideo(video: Video): OwnerVideo {
   return {
     publicId: video.public_id,
+    title: video.title,
     status: video.status,
     failure_reason: video.failure_reason,
     ...toMetadata(video),

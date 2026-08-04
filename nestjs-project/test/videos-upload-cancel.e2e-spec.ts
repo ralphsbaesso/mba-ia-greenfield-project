@@ -34,6 +34,8 @@ const PART_BYTES = readFileSync(
   join(__dirname, 'fixtures', 'sample-with-audio.mp4'),
 );
 
+const TITLE = 'Upload e2e seed';
+
 describe('Upload cancel (e2e)', () => {
   let app: INestApplication<App>;
   let dataSource: DataSource;
@@ -131,7 +133,11 @@ describe('Upload cancel (e2e)', () => {
     const initiated = await request(app.getHttpServer())
       .post('/videos/uploads')
       .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ contentType: 'video/mp4', sizeBytes: PART_BYTES.length })
+      .send({
+        title: TITLE,
+        contentType: 'video/mp4',
+        sizeBytes: PART_BYTES.length,
+      })
       .expect(201);
 
     const body = initiated.body as InitiateBody;

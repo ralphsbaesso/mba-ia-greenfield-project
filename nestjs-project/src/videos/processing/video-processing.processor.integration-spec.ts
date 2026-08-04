@@ -95,6 +95,7 @@ describe('VideoProcessingProcessor (integration)', () => {
       videos.create({
         public_id: generatePublicId(),
         channel_id: channelId,
+        title: 'Processor seed',
         status,
         storage_key: 'placeholder',
       }),

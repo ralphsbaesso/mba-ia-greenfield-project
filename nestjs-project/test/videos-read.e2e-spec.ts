@@ -21,6 +21,7 @@ interface ErrorBody {
 }
 interface PublicVideoBody {
   publicId: string;
+  title: string;
   duration_seconds: number | null;
   width: number | null;
   height: number | null;
@@ -43,6 +44,7 @@ type OpenApiOperation = {
 const ERROR_ENVELOPE_REF = '#/components/schemas/ApiErrorEnvelope';
 const OWNER_ROUTE = '/videos/me';
 const UNKNOWN_PUBLIC_ID = 'zzzzzzzzzzzz';
+const SEED_TITLE = 'Read e2e seed';
 
 /** Everything a `ready` row needs to satisfy the state-scoped CHECKs. */
 const READY_METADATA = {
@@ -141,6 +143,7 @@ describe('Video reads (e2e)', () => {
       videos.create({
         public_id: generatePublicId(),
         channel_id: channelId,
+        title: SEED_TITLE,
         status,
         storage_key: 'videos/seed.mp4',
         ...(status === VideoStatus.READY && {
@@ -169,6 +172,7 @@ describe('Video reads (e2e)', () => {
       const body = res.body as PublicVideoBody;
       expect(body).toEqual({
         publicId: ready.public_id,
+        title: SEED_TITLE,
         ...READY_METADATA,
       });
     });
@@ -260,6 +264,8 @@ describe('Video reads (e2e)', () => {
       const body = res.body as OwnerVideoBody;
       expect(body.status).toBe('draft');
       expect(body.publicId).toBe(draft.public_id);
+      // The draft carries its title from initiate — a pre-registered row is never nameless.
+      expect(body.title).toBe(SEED_TITLE);
       expect(body.duration_seconds).toBeNull();
       expect(body.width).toBeNull();
       expect(body.size_bytes).toBeNull();

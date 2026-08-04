@@ -28,6 +28,7 @@ describe('Video entity (integration)', () => {
   const draftRow = (overrides: Partial<Video> = {}): Partial<Video> => ({
     channel_id: channelId,
     public_id: generatePublicId(),
+    title: 'Entity seed',
     storage_key: `videos/${generatePublicId()}.mp4`,
     ...overrides,
   });

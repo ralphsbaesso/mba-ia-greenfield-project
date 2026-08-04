@@ -135,6 +135,7 @@ describe('Video delivery (e2e)', () => {
       videos.create({
         public_id: publicId,
         channel_id: channelId,
+        title: 'Delivery e2e seed',
         status,
         storage_key: `videos/e2e-${publicId}.mp4`,
         ...(status === VideoStatus.READY && {

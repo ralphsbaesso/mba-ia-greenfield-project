@@ -725,6 +725,9 @@
                     "publicId": {
                       "type": "string"
                     },
+                    "title": {
+                      "type": "string"
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
@@ -839,6 +842,9 @@
                 "schema": {
                   "properties": {
                     "publicId": {
+                      "type": "string"
+                    },
+                    "title": {
                       "type": "string"
                     },
                     "duration_seconds": {

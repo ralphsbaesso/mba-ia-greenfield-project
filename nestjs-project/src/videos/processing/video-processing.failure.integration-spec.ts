@@ -104,6 +104,7 @@ describe('Video processing failures (integration)', () => {
       videos.create({
         public_id: generatePublicId(),
         channel_id: channelId,
+        title: 'Failure seed',
         status: VideoStatus.PROCESSING,
         storage_key: 'placeholder',
       }),
