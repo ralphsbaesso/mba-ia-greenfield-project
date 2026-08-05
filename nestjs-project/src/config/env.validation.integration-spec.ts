@@ -1,4 +1,10 @@
+import * as Joi from 'joi';
 import { envValidationSchema } from './env.validation';
+
+// Joi types validate()'s value as `any`; pin the fields these specs read.
+interface ValidatedEnv {
+  SWAGGER_ENABLED: string;
+}
 
 const requiredEnv = {
   DB_USERNAME: 'user',
@@ -6,9 +12,16 @@ const requiredEnv = {
   DB_NAME: 'db',
   JWT_SECRET: 'secret',
   JWT_REFRESH_SECRET: 'refresh-secret',
+  STORAGE_ACCESS_KEY: 'storage-key',
+  STORAGE_SECRET_KEY: 'storage-secret',
+  STORAGE_BUCKET: 'bucket',
+  REDIS_HOST: 'redis',
+  REDIS_PORT: '6379',
 };
 
-const validate = (env: Record<string, string>) =>
+const validate = (
+  env: Record<string, string>,
+): Joi.ValidationResult<ValidatedEnv> =>
   envValidationSchema.validate(
     { ...requiredEnv, ...env },
     { allowUnknown: true, abortEarly: false },
@@ -32,8 +45,10 @@ describe('envValidationSchema — SWAGGER_ENABLED', () => {
   });
 
   it('should apply default false when SWAGGER_ENABLED is not set', () => {
-    const { value, error } = validate({});
-    expect(error).toBeUndefined();
-    expect(value.SWAGGER_ENABLED).toBe('false');
+    const result = validate({});
+    expect(result.error).toBeUndefined();
+    // ValidationResult is a union and only its error-free branch types `value`.
+    if (result.error) throw result.error;
+    expect(result.value.SWAGGER_ENABLED).toBe('false');
   });
 });

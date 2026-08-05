@@ -7,19 +7,40 @@ const PG_UNIQUE_VIOLATION = '23505';
 const NICKNAME_COLUMN = 'nickname';
 const MAX_RETRIES = 5;
 
+// QueryFailedError's constructor copies the driver error's own properties onto
+// itself, so the pg fields sit alongside the declared ones without being typed.
+type PgQueryFailedError = QueryFailedError & {
+  code?: string;
+  detail?: string;
+};
+
 function isPgUniqueViolationOnColumn(err: unknown, column: string): boolean {
   if (!(err instanceof QueryFailedError)) return false;
-  const e = err as any;
+  const { code, detail } = err as PgQueryFailedError;
   return (
-    e.code === PG_UNIQUE_VIOLATION &&
-    typeof e.detail === 'string' &&
-    e.detail.includes(column)
+    code === PG_UNIQUE_VIOLATION &&
+    typeof detail === 'string' &&
+    detail.includes(column)
   );
 }
 
 @Injectable()
 export class ChannelsService {
   constructor(private readonly dataSource: DataSource) {}
+
+  /**
+   * Ownership of a video is resolved through the owner's channel, so the
+   * `sub` → `channel_id` lookup belongs here rather than in the videos module
+   * (video-authorization-and-metadata/TD-02).
+   */
+  async findIdByUserId(userId: string): Promise<string | null> {
+    const channel = await this.dataSource.getRepository(Channel).findOne({
+      where: { user_id: userId },
+      select: { id: true },
+    });
+
+    return channel?.id ?? null;
+  }
 
   async createChannel(userId: string, email: string): Promise<Channel> {
     const baseNickname = sanitizeNickname(email.split('@')[0]);

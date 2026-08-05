@@ -8,14 +8,28 @@ import appConfig from './config/app.config';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
 import mailConfig from './config/mail.config';
+import redisConfig from './config/redis.config';
+import storageConfig from './config/storage.config';
 import swaggerConfig from './config/swagger.config';
 import { envValidationSchema } from './config/env.validation';
+import { StorageModule } from './storage/storage.module';
+import { VideoQueueModule } from './videos/processing/video-queue.module';
+import { VideoUploadsModule } from './videos/uploads/video-uploads.module';
+import { VideosModule } from './videos/videos.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, authConfig, databaseConfig, mailConfig, swaggerConfig],
+      load: [
+        appConfig,
+        authConfig,
+        databaseConfig,
+        mailConfig,
+        redisConfig,
+        storageConfig,
+        swaggerConfig,
+      ],
       validationSchema: envValidationSchema,
       validationOptions: { allowUnknown: true, abortEarly: false },
     }),
@@ -34,6 +48,10 @@ import { envValidationSchema } from './config/env.validation';
       }),
     }),
     AuthModule,
+    StorageModule,
+    VideoQueueModule,
+    VideoUploadsModule,
+    VideosModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -3,8 +3,11 @@ import { User } from '../users/entities/user.entity';
 import { Channel } from '../channels/entities/channel.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
+import { Video } from '../videos/entities/video.entity';
 import { CreateUsersAndChannels1775687773260 } from './migrations/1775687773260-CreateUsersAndChannels';
 import { CreateAuthTokens1777579850478 } from './migrations/1777579850478-CreateAuthTokens';
+import { CreateVideos1785543527910 } from './migrations/1785543527910-CreateVideos';
+import { AddVideoTitle1785629400000 } from './migrations/1785629400000-AddVideoTitle';
 import { createTestDataSource } from '../test/create-test-data-source';
 
 const MANAGED_TABLES = [
@@ -12,6 +15,7 @@ const MANAGED_TABLES = [
   'channels',
   'refresh_tokens',
   'verification_tokens',
+  'videos',
 ];
 
 describe('Database migrations (integration)', () => {
@@ -19,37 +23,47 @@ describe('Database migrations (integration)', () => {
 
   beforeAll(async () => {
     dataSource = createTestDataSource(
-      [User, Channel, RefreshToken, VerificationToken],
+      [User, Channel, RefreshToken, VerificationToken, Video],
       {
         synchronize: false,
         migrations: [
           CreateUsersAndChannels1775687773260,
           CreateAuthTokens1777579850478,
+          CreateVideos1785543527910,
+          AddVideoTitle1785629400000,
         ],
       },
     );
 
     await dataSource.initialize();
 
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
+    // Sequential, not `Promise.all`: a `CASCADE` drop takes locks on the dropped
+    // table *and* on everything referencing it, so concurrent drops of tables that
+    // are FK-related acquire those locks in different orders and deadlock.
+    for (const table of [...MANAGED_TABLES, 'migrations']) {
+      await dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`);
+    }
+
+    // DROP TABLE leaves enum types behind and Postgres has no CREATE TYPE IF NOT
+    // EXISTS, so re-running the migrations against an already-migrated database
+    // fails unless the type is dropped too. Must come after the tables that use it.
+    await dataSource.query(
+      `DROP TYPE IF EXISTS "public"."verification_tokens_type_enum"`,
+    );
+    await dataSource.query(`DROP TYPE IF EXISTS "public"."videos_status_enum"`);
   });
 
   afterAll(async () => {
-    // The second test undoes the last migration, leaving token tables missing.
+    // The second test undoes the last migration, leaving its tables missing.
     // Re-apply so the shared DB is fully migrated when subsequent suites run.
     await dataSource.runMigrations();
     await dataSource.destroy();
   });
 
-  it('should apply all migrations and create all four tables', async () => {
+  it('should apply all migrations and create every managed table', async () => {
     const ranMigrations = await dataSource.runMigrations();
 
-    expect(ranMigrations).toHaveLength(2);
+    expect(ranMigrations).toHaveLength(4);
 
     const result = await dataSource.query<{ table_name: string }[]>(
       `SELECT table_name FROM information_schema.tables
@@ -64,17 +78,31 @@ describe('Database migrations (integration)', () => {
       'refresh_tokens',
       'users',
       'verification_tokens',
+      'videos',
     ]);
   });
 
-  it('should revert the last migration and remove token tables', async () => {
+  it('should revert the last migration and drop the title column', async () => {
+    await dataSource.undoLastMigration();
+
+    const result = await dataSource.query<{ column_name: string }[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'videos'
+         AND column_name = 'title'`,
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it('should revert down to removing the videos table', async () => {
+    // Continues where the previous test stopped: the title column is already
+    // reverted, so one more step drops the table itself.
     await dataSource.undoLastMigration();
 
     const result = await dataSource.query<{ table_name: string }[]>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public'
          AND table_name = ANY($1::text[])`,
-      [['refresh_tokens', 'verification_tokens']],
+      [['videos']],
     );
     expect(result).toHaveLength(0);
   });
