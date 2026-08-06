@@ -7,14 +7,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { server } from "@/mocks/server"
 import { LoginForm } from "../login-form"
 
-const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }))
+const { refreshMock, replaceMock } = vi.hoisted(() => ({
+  refreshMock: vi.fn(),
+  replaceMock: vi.fn(),
+}))
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: refreshMock }),
+  useRouter: () => ({ refresh: refreshMock, replace: replaceMock }),
 }))
 
 beforeEach(() => {
   refreshMock.mockClear()
+  replaceMock.mockClear()
 })
 
 function envelope(statusCode: number, message: string) {
@@ -27,7 +31,7 @@ async function fillValid(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("<LoginForm /> wiring", () => {
-  it("submits a typed payload, refreshes on 200, and exposes no tokens", async () => {
+  it("submits a typed payload, refreshes then redirects on 200, and exposes no tokens", async () => {
     const user = userEvent.setup()
     const received: Record<string, unknown>[] = []
     server.use(
@@ -42,7 +46,15 @@ describe("<LoginForm /> wiring", () => {
     await fillValid(user)
     await user.click(screen.getByRole("button", { name: "Sign in" }))
 
-    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"))
+    expect(refreshMock).toHaveBeenCalledTimes(1)
+    expect(replaceMock).toHaveBeenCalledTimes(1)
+    // Ordering contract: layouts are client-cached, pages are not — so the
+    // root layout must be re-fetched from /login (refresh) before navigating,
+    // or SessionProvider hydrates with the stale logged-out session.
+    expect(refreshMock.mock.invocationCallOrder[0]).toBeLessThan(
+      replaceMock.mock.invocationCallOrder[0]
+    )
     expect(received).toHaveLength(1)
     expect(received[0]).toEqual({
       email: "alice@example.com",
@@ -69,6 +81,7 @@ describe("<LoginForm /> wiring", () => {
     const alert = await screen.findByRole("alert")
     expect(alert).toHaveTextContent("Credenciais inválidas")
     expect(refreshMock).not.toHaveBeenCalled()
+    expect(replaceMock).not.toHaveBeenCalled()
   })
 
   it("maps a 403 to an email-not-confirmed alert with a resend CTA", async () => {
@@ -90,6 +103,7 @@ describe("<LoginForm /> wiring", () => {
     expect(
       screen.getByRole("link", { name: /Reenviar e-mail de confirmação/i })
     ).toBeInTheDocument()
+    expect(replaceMock).not.toHaveBeenCalled()
   })
 
   it("maps a 400 to an inline error on the email field", async () => {
@@ -106,6 +120,7 @@ describe("<LoginForm /> wiring", () => {
 
     expect(await screen.findByText("Validation failed")).toBeInTheDocument()
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(replaceMock).not.toHaveBeenCalled()
   })
 
   it("blocks submit with client-side validation and fires no request until valid", async () => {

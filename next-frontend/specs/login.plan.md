@@ -10,7 +10,7 @@ target_file: tests/auth-login.e2e-spec.ts
 
 ## Application Overview
 
-A tela `/login` autentica um usuário com e-mail e senha e inicia a sessão. É uma rota anônima: um shell RSC compõe o form `"use client"` (`components/auth/login-form.tsx`, react-hook-form + Zod), que submete via `fetch("/api/auth/login")` ao Route Handler BFF, que proxia `POST /auth/login` no NestJS upstream. Em `200` o BFF sela o cookie `iron-session` encriptado (carregando `access_token`/`refresh_token` + fingerprint mínimo do usuário) — os tokens nunca chegam ao browser — e o form dispara `router.refresh()` para o chrome refletir o estado autenticado. Erros `401` (credenciais inválidas), `403` (e-mail não confirmado) e `400` (validação) são mapeados para alertas/feedback; a validação client-side espelha o backend 1:1.
+A tela `/login` autentica um usuário com e-mail e senha e inicia a sessão. É uma rota anônima: um shell RSC compõe o form `"use client"` (`components/auth/login-form.tsx`, react-hook-form + Zod), que submete via `fetch("/api/auth/login")` ao Route Handler BFF, que proxia `POST /auth/login` no NestJS upstream. Em `200` o BFF sela o cookie `iron-session` encriptado (carregando `access_token`/`refresh_token` + fingerprint mínimo do usuário) — os tokens nunca chegam ao browser — e o form dispara `router.refresh()` (para o root layout re-hidratar o `SessionProvider` com a nova sessão) seguido de `router.replace("/")`, levando o usuário para a área autenticada sem deixar `/login` no histórico. O gate de sessão é feito nas RSCs: `/` redireciona para `/login` quando não há sessão, e `/login` redireciona para `/` quando já há. Erros `401` (credenciais inválidas), `403` (e-mail não confirmado) e `400` (validação) são mapeados para alertas/feedback; a validação client-side espelha o backend 1:1.
 
 ## Test Scenarios
 
@@ -63,3 +63,13 @@ A tela `/login` autentica um usuário com e-mail e senha e inicia a sessão. É 
     - expect: o submit permanece bloqueado e as mensagens inline espelham o backend 1:1
   3. Usuário corrige os campos para valores válidos
     - expect: o submit é liberado e `POST /api/auth/login` é disparada
+
+#### 1.4. raiz-anonima-redireciona-para-login
+
+**Covers AC:** #1
+**Source:** manual
+**Last sync:** 2026-08-05T00:00:00Z
+
+**Steps:**
+  1. Usuário anônimo navega para `/`
+    - expect: é redirecionado para `/login` e o `Card` de login renderiza

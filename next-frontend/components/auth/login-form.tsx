@@ -51,9 +51,13 @@ function LoginForm({ className, ...props }: React.ComponentProps<"form">) {
     }
 
     // On 200 the BFF has already sealed the iron-session cookie (tokens never
-    // cross to the browser, per TD-02). Refresh so server chrome reflects the
-    // authenticated session (per phase-02-auth-frontend/TD-06).
+    // cross to the browser, per TD-02). refresh() first, while /login is still
+    // the current route: layouts are client-cached but pages are not, so this
+    // is what re-fetches the root layout — and its SessionProvider — with the
+    // new cookie (per phase-02-auth-frontend/TD-06). Only then navigate;
+    // replace() rather than push() so Back cannot return to /login post-auth.
     router.refresh()
+    router.replace("/")
   }
 
   return (

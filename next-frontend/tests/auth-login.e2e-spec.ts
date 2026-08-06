@@ -46,6 +46,10 @@ test.describe("auth-login", () => {
 
     // No invalid-credentials / not-confirmed alert on success.
     await expect(page.locator("[data-slot='form-error']")).toHaveCount(0)
+
+    // Redirect into the authenticated area (login.plan.md step 1.1.3).
+    await expect(page).toHaveURL("/")
+    await expect(page.locator("[data-slot='home-placeholder']")).toBeVisible()
   })
 
   test("1.2 login-erros-401-403-400", async ({ page }) => {
@@ -109,5 +113,16 @@ test.describe("auth-login", () => {
     await page.getByRole("button", { name: "Sign in" }).click()
     await loginRequest
     expect(requests.length).toBeGreaterThan(0)
+  })
+
+  test("1.4 raiz-anonima-redireciona-para-login", async ({ page }) => {
+    // Playwright gives each test a fresh context, so this runs cookie-less.
+    // The gate is an async RSC — Vitest cannot render one, so E2E is the only
+    // layer that can prove it.
+    await page.goto("/")
+
+    await expect(page).toHaveURL("/login")
+    await expect(page.locator("[data-slot='card']")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible()
   })
 })
